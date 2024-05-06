@@ -34,5 +34,5 @@ if __name__ == '__main__':
     data = get_hetero_rossmann()
     model = build_hetero_gnn('GAT', data, types=list(data.x_dict.keys()), hidden_channels=64, num_layers=2, out_channels=1)
     output = model(data.x_dict, data.edge_index_dict)
-
-    print("Neki")
+    
+    assert output['target'].shape[0] == data['target'].y.shape[0]

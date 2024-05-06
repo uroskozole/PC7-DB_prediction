@@ -28,10 +28,10 @@ def get_hetero_rossmann():
     tables['historical'] = ht.fit_transform(tables['historical'])
 
     # remove -1 from indexes to make them start from 0
-    data['store', 'to', 'historical'].edge_index = torch.tensor(np.array(tables['historical'][['Store', 'Id']]).T)-1
-    data['historical', 'from', 'store'].edge_index = torch.tensor(np.array(tables['historical'][['Id', 'Store']]).T)-1
-    data['historical', 'to', 'target'].edge_index = torch.tensor(np.array(tables['store'][['Id', 'Id']]).T)-1
-    data['target', 'from', 'historical'].edge_index = torch.tensor(np.array(tables['store'][['Id', 'Id']]).T)-1
+    data['store', 'to', 'historical'].edge_index = torch.tensor(tables['historical'][['Store', 'Id']].values.T)-1
+    data['historical', 'from', 'store'].edge_index = torch.tensor(tables['historical'][['Id', 'Store']].values.T)-1
+    data['historical', 'to', 'target'].edge_index = torch.tensor(tables['historical'][['Id', 'Id']].values.T.astype('int64'))-1
+    data['target', 'from', 'historical'].edge_index = torch.tensor(tables['historical'][['Id', 'Id']].values.T.astype('int64'))-1
 
     # drop ids
     tables['store'] = tables['store'].drop(columns=['Store'])
@@ -40,7 +40,7 @@ def get_hetero_rossmann():
     # build hetero data
     data['store'].x = torch.tensor(tables['store'].values).float()
     data['historical'].x = torch.tensor(tables['historical'].values).float()
-    data['target'].x = torch.zeros((tables['store'].shape[0], 1)).float()
+    data['target'].x = torch.zeros((tables['historical'].shape[0], 1)).float()
     data['target'].y = torch.tensor(y.values.reshape(-1, 1)).float()
 
     return data
