@@ -4,6 +4,7 @@ import numpy as np
 
 from utils.metadata import Metadata
 from utils.data import load_tables, remove_sdv_columns
+from utils.utils import CustomHyperTransformer
 
 DATA_DIR = "./data"
 
@@ -17,22 +18,33 @@ def get_hetero_rossmann():
 
     data = HeteroData()
 
-    # keep only numerical columns for tables store and historical
-
-    tables['store'] = tables['store'][[col for col in tables['store'].columns if tables['store'][col].dtype in ['int64', 'float64']]]
-    tables['historical'] = tables['historical'][[col for col in tables['historical'].columns if tables['historical'][col].dtype in ['int64', 'float64']]]
-
-
     # reindex historical to start from 1 and not from 300k
     tables['historical']['Id'] = np.arange(1, tables['historical'].shape[0]+1)
     y = tables['historical'].pop('Customers')
 
-    # build hetero data
-    data['store'].x = torch.tensor(tables['store'].values).float()
-    data['historical'].x = torch.tensor(tables['historical'].values).float()
-    data['historical'].y = torch.tensor(y.values).float()
+    # tranform to numerical
+    ht = CustomHyperTransformer()
+    tables['store'] = ht.fit_transform(tables['store'])
+    tables['historical'] = ht.fit_transform(tables['historical'])
 
     # remove -1 from indexes to make them start from 0
     data['store', 'to', 'historical'].edge_index = torch.tensor(np.array(tables['historical'][['Store', 'Id']]).T)-1
     data['historical', 'from', 'store'].edge_index = torch.tensor(np.array(tables['historical'][['Id', 'Store']]).T)-1
+    data['historical', 'to', 'target'].edge_index = torch.tensor(np.array(tables['store'][['Id', 'Id']]).T)-1
+    data['target', 'from', 'historical'].edge_index = torch.tensor(np.array(tables['store'][['Id', 'Id']]).T)-1
+
+    # drop ids
+    tables['store'] = tables['store'].drop(columns=['Store'])
+    tables['historical'] = tables['historical'].drop(columns=['Id', 'Store'])
+
+    # build hetero data
+    data['store'].x = torch.tensor(tables['store'].values).float()
+    data['historical'].x = torch.tensor(tables['historical'].values).float()
+    data['target'].x = torch.zeros((tables['store'].shape[0], 1)).float()
+    data['target'].y = torch.tensor(y.values.reshape(-1, 1)).float()
+
     return data
+
+if __name__ == '__main__':
+    data = get_hetero_rossmann()
+    print(data)
