@@ -7,13 +7,10 @@ import torch
 import numpy as np
 
 from hetero_gnns import build_hetero_gnn
-from table_to_heterodata import get_hetero_rossmann
+from table_to_heterodata import csv_to_hetero
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.set_default_device(device)
-
-
-
 
 def train(model, data, num_epochs=10000):
     # TODO: add dataloader
@@ -34,7 +31,7 @@ def train(model, data, num_epochs=10000):
     return model
 
 if __name__ == '__main__':
-    data = get_hetero_rossmann()
-    model = build_hetero_gnn('GAT', data, aggr='mean', types=list(data.x_dict.keys()), hidden_channels=128, num_layers=3, out_channels=1)
-    model = train(model, data, num_epochs=100)
+    data = csv_to_hetero('rossmann_subsampled', 'historical', 'Customers')
+    model = build_hetero_gnn('GIN', data, aggr='mean', types=list(data.x_dict.keys()), hidden_channels=128, num_layers=3, out_channels=1)
+    model = train(model, data, num_epochs=1000)
 

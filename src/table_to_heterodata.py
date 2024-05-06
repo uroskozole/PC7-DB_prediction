@@ -54,13 +54,13 @@ def csv_to_hetero(database_name, target_table, target_column):
 
         # if table_values empty, set torch.zeros
         if table_values.size == 0:
-            data[key].x = torch.zeros((tables[key].shape[0], 1)).float()
+            data[key].x = torch.zeros((tables[key].shape[0], 1), dtype=torch.float32)
         else:
-            data[key].x = torch.tensor(table_values).float()
+            data[key].x = torch.tensor(table_values, dtype=torch.float32)
 
     
-    data['target'].x = torch.zeros((tables[target_table].shape[0], 1)).float()
-    data['target'].y = torch.tensor(y.values.reshape(-1, 1)).float()
+    data['target'].x = torch.zeros((tables[target_table].shape[0], 1), dtype=torch.float32)
+    data['target'].y = torch.tensor(y.values.reshape(-1, 1), dtype=torch.float32)
 
     for key in metadata.get_tables():
         std = data[key].x.std(dim=0)
