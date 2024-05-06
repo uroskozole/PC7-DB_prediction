@@ -22,15 +22,15 @@ def get_hetero_rossmann():
     tables['store'] = tables['store'][[col for col in tables['store'].columns if tables['store'][col].dtype in ['int64', 'float64']]]
     tables['historical'] = tables['historical'][[col for col in tables['historical'].columns if tables['historical'][col].dtype in ['int64', 'float64']]]
 
-    # add a column to store table to make the number of cols same as historical
-    tables['store']['neki'] = 0
 
     # reindex historical to start from 1 and not from 300k
     tables['historical']['Id'] = np.arange(1, tables['historical'].shape[0]+1)
+    y = tables['historical'].pop('Customers')
 
     # build hetero data
-    data['store'].x = torch.tensor(np.array(tables['store'])).float()
-    data['historical'].x = torch.tensor(np.array(tables['historical'])).float()
+    data['store'].x = torch.tensor(tables['store'].values).float()
+    data['historical'].x = torch.tensor(tables['historical'].values).float()
+    data['historical'].y = torch.tensor(y.values).float()
 
     # remove -1 from indexes to make them start from 0
     data['store', 'to', 'historical'].edge_index = torch.tensor(np.array(tables['historical'][['Store', 'Id']]).T)-1
