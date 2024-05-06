@@ -9,8 +9,8 @@ import pandas as pd
 import networkx as nx
 from deepsnap.hetero_graph import HeteroGraph
 
-from relsyndgb.metadata import Metadata
-from relsyndgb.data import load_tables, remove_sdv_columns
+from utils.metadata import Metadata
+from utils.data import load_tables, remove_sdv_columns
 
 from sklearn.preprocessing import LabelEncoder
 from sklearn.cluster import KMeans
@@ -74,8 +74,8 @@ def create_deepsnap_dataset(dataset_name, target_table, masked_tables, feature_d
     if load_stored and os.path.exists(f'data/hetero_graph/{dataset_name}_{target_table}_{k}.pkl'):
         return pickle.load(open(f'data/hetero_graph/{dataset_name}_{target_table}_{k}.pkl', 'rb'))
     
-    metadata = Metadata().load_from_json(f'{DATA_DIR}/downloads/{dataset_name}/metadata.json')
-    tables = load_tables(f'{DATA_DIR}/downloads/{dataset_name}/', metadata)
+    metadata = Metadata().load_from_json(f'{DATA_DIR}/{dataset_name}/metadata.json')
+    tables = load_tables(f'{DATA_DIR}/{dataset_name}/', metadata)
     tables, metadata = remove_sdv_columns(tables, metadata)
 
     G, _ = database_to_graph(dataset_name)

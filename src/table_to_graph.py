@@ -1,10 +1,10 @@
 import pandas as pd
 import networkx as nx
 
-from relsyndgb.metadata import Metadata
-from relsyndgb.data import load_tables, remove_sdv_columns
+from utils.metadata import Metadata
+from utils.data import load_tables, remove_sdv_columns
 
-DATA_DIR = "C:/Users/valte/Faks/mag1/Project/relsyndgb/data"
+DATA_DIR = "./data"
 ###########################################################################################
 
 def tables_to_graph(edge_index, source, target, source_attrs_df=None, target_attrs_df=None, directed=True):
@@ -45,9 +45,9 @@ def database_to_graph(database_name, split="train", directed=True):
     """
     
     # load the data and metadata
-    metadata = Metadata().load_from_json(f'{DATA_DIR}/downloads/{database_name}/metadata.json')
+    metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
 
-    tables = load_tables(f'{DATA_DIR}/downloads/{database_name}/', metadata)
+    tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
     tables, metadata = remove_sdv_columns(tables, metadata)
     
     # initialize empty graph
