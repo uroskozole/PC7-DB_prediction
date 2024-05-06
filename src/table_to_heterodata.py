@@ -2,6 +2,7 @@ from torch_geometric.data import HeteroData
 import torch_geometric.transforms as T
 import torch
 import numpy as np
+import pandas as pd
 
 from utils.metadata import Metadata
 from utils.data import load_tables, remove_sdv_columns
@@ -9,48 +10,71 @@ from utils.utils import CustomHyperTransformer
 
 DATA_DIR = "./data"
 
-
-def get_hetero_rossmann():
-    database_name = "rossmann_subsampled"
+def csv_to_hetero(database_name, target_table, target_column):
     metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
 
     tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
     tables, metadata = remove_sdv_columns(tables, metadata)
+    y = tables[target_table].pop(target_column)
 
     data = HeteroData()
 
-    # reindex historical to start from 1 and not from 300k
-    tables['historical']['Id'] = np.arange(1, tables['historical'].shape[0]+1)
-    y = tables['historical'].pop('Customers')
-
     # tranform to numerical
     ht = CustomHyperTransformer()
-    tables['store'] = ht.fit_transform(tables['store'])
-    tables['historical'] = ht.fit_transform(tables['historical'])
+    for key in metadata.get_tables():
+        id_cols = metadata.get_column_names(key, sdtype='id')
+        temp_table = tables[key].drop(columns=id_cols)
+        temp_table = ht.fit_transform(temp_table)
+        tables[key] = pd.concat([tables[key][id_cols], temp_table], axis=1)
 
-    # remove -1 from indexes to make them start from 0
-    data['store', 'to', 'historical'].edge_index = torch.tensor(tables['historical'][['Store', 'Id']].values.T)-1
-    data['historical', 'from', 'store'].edge_index = torch.tensor(tables['historical'][['Id', 'Store']].values.T)-1
-    data['historical', 'to', 'target'].edge_index = torch.tensor(tables['historical'][['Id', 'Id']].values.T.astype('int64'))-1
-    data['target', 'from', 'historical'].edge_index = torch.tensor(tables['historical'][['Id', 'Id']].values.T.astype('int64'))-1
+    # set connections
+    for relationship in metadata.relationships:
+        parent_table = relationship['parent_table_name']
+        child_table = relationship['child_table_name']
+        parent_column = relationship['parent_primary_key']
+        child_column = relationship['child_foreign_key']
+
+        tables[parent_table][parent_column] = np.arange(tables[parent_table].shape[0])
+        tables[child_table][child_column] = np.arange(tables[child_table].shape[0])
+
+        data[parent_table, 'to', child_table].edge_index = torch.tensor(tables[child_table][[child_column, parent_column]].values.T.astype('int64'))
+        data[child_table, 'from', parent_table].edge_index = torch.tensor(tables[child_table][[child_column, parent_column]].values.T.astype('int64'))
+
+    # set connection to target
+    target_primary_key = metadata.tables[target_table].primary_key
+    data[target_table, 'to', 'target'].edge_index = torch.tensor(tables[target_table][[target_primary_key, target_primary_key]].values.T.astype('int64'))
+    data['target', 'from', target_table].edge_index = torch.tensor(tables[target_table][[target_primary_key, target_primary_key]].values.T.astype('int64'))
 
     # drop ids
-    tables['store'] = tables['store'].drop(columns=['Store'])
-    tables['historical'] = tables['historical'].drop(columns=['Id', 'Store'])
+    for key in metadata.get_tables():
+        id_cols = metadata.get_column_names(key, sdtype='id')
+        tables[key] = tables[key].drop(columns=id_cols)
 
-    # build hetero data
-    data['store'].x = torch.tensor(tables['store'].values).float()
-    data['historical'].x = torch.tensor(tables['historical'].values).float()
-    data['target'].x = torch.zeros((tables['historical'].shape[0], 1)).float()
+        table_values = tables[key].values
+
+        # if table_values empty, set torch.zeros
+        if table_values.size == 0:
+            data[key].x = torch.zeros((tables[key].shape[0], 1)).float()
+        else:
+            data[key].x = torch.tensor(table_values).float()
+
+    
+    data['target'].x = torch.zeros((tables[target_table].shape[0], 1)).float()
     data['target'].y = torch.tensor(y.values.reshape(-1, 1)).float()
+
+    for key in metadata.get_tables():
+        std = data[key].x.std(dim=0)
+        std[std == 0] = 1
+        data[key].x = ((data[key].x - data[key].x.mean(dim=0)) / std)
 
     transform = T.Compose([
         T.AddSelfLoops(),
-        T.NormalizeFeatures(),
     ])
 
     return transform(data)
 
+
 if __name__ == '__main__':
-    data = get_hetero_rossmann()
+    data = csv_to_hetero("rossmann_subsampled", "historical", "Customers")
+    # data = csv_to_hetero("Biodegradability_v1", "molecule", "activity")
     print(data)
