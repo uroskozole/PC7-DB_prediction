@@ -1,4 +1,5 @@
 from torch_geometric.data import HeteroData
+import torch_geometric.transforms as T
 import torch
 import numpy as np
 
@@ -43,7 +44,12 @@ def get_hetero_rossmann():
     data['target'].x = torch.zeros((tables['historical'].shape[0], 1)).float()
     data['target'].y = torch.tensor(y.values.reshape(-1, 1)).float()
 
-    return data
+    transform = T.Compose([
+        T.AddSelfLoops(),
+        T.NormalizeFeatures(),
+    ])
+
+    return transform(data)
 
 if __name__ == '__main__':
     data = get_hetero_rossmann()
