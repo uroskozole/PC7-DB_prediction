@@ -27,6 +27,22 @@ def csv_to_hetero(database_name, target_table, target_column):
         temp_table = ht.fit_transform(temp_table)
         tables[key] = pd.concat([tables[key][id_cols], temp_table], axis=1)
 
+    id_map = {}
+
+    for key in metadata.get_tables():
+        id_cols = metadata.get_column_names(key, sdtype='id')
+        for col in id_cols:
+            if key not in id_map:
+                id_map[key] = {}
+            
+            if col not in id_map[key]:
+                id_map[key][col] = {}
+                for i, id_ in enumerate(tables[key][col].unique()):
+                    id_map[key][col][id_] = i
+
+            tables[key][col] = tables[key][col].map(id_map[key][col])
+            
+
     # set connections
     for relationship in metadata.relationships:
         parent_table = relationship['parent_table_name']
@@ -34,10 +50,7 @@ def csv_to_hetero(database_name, target_table, target_column):
         parent_column = relationship['parent_primary_key']
         child_column = relationship['child_foreign_key']
 
-        tables[parent_table][parent_column] = np.arange(tables[parent_table].shape[0])
-        tables[child_table][child_column] = np.arange(tables[child_table].shape[0])
-
-        data[parent_table, 'to', child_table].edge_index = torch.tensor(tables[child_table][[child_column, parent_column]].values.T.astype('int64'))
+        data[parent_table, 'to', child_table].edge_index = torch.tensor(tables[child_table][[parent_column, child_column]].values.T.astype('int64'))
         data[child_table, 'from', parent_table].edge_index = torch.tensor(tables[child_table][[child_column, parent_column]].values.T.astype('int64'))
 
     # set connection to target
