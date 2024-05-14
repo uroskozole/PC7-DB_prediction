@@ -1,7 +1,6 @@
 from torch_geometric.data import HeteroData
 import torch_geometric.transforms as T
 import torch
-import numpy as np
 import pandas as pd
 from pathlib import Path
 
@@ -45,6 +44,8 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
 
         if key not in ht_dict or split == "train":
             ht_ = CustomHyperTransformer()
+            numerical_dtypes = temp_table.dtypes[temp_table.dtypes == 'float64'].index
+            temp_table[numerical_dtypes].fillna(0, inplace=True)
             ht_.fit(temp_table)
             ht_dict[key] = ht_
         else:
@@ -84,15 +85,11 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
                 raise ValueError(f"Column {column_name} not found in table {table_name}")
             tables[table_name][column_name] = tables[table_name][column_name].map(id_map[table_name][column_name])
 
-        
 
-            
-
-    # set connections
+    # set edges based on relationships
     for relationship in metadata.relationships:
         parent_table = relationship['parent_table_name']
         child_table = relationship['child_table_name']
-        parent_column = relationship['parent_primary_key']
         foreign_key = relationship['child_foreign_key']
 
         child_primary_key = metadata.get_primary_key(child_table)
@@ -129,6 +126,7 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
 
     transform = T.Compose([
         T.AddSelfLoops(),
+        # T.RemoveIsolatedNodes(),
     ])
 
     if split == "train":
