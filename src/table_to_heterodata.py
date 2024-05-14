@@ -55,18 +55,37 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
 
     id_map = {}
 
-    for key in metadata.get_tables():
-        id_cols = metadata.get_column_names(key, sdtype='id')
-        for col in id_cols:
-            if key not in id_map:
-                id_map[key] = {}
-            
-            if col not in id_map[key]:
-                id_map[key][col] = {}
-                for i, id_ in enumerate(tables[key][col].unique()):
-                    id_map[key][col][id_] = i
+    for parent_table_name in metadata.get_tables():
+        primary_key = metadata.get_primary_key(parent_table_name)
 
-            tables[key][col] = tables[key][col].map(id_map[key][col])
+        if parent_table_name not in id_map:
+            id_map[parent_table_name] = {}
+        
+        if primary_key not in id_map[parent_table_name]:
+            id_map[parent_table_name][primary_key] = {}
+            idx = 0
+            for primary_key_val in tables[parent_table_name][primary_key].unique():
+                id_map[parent_table_name][primary_key][primary_key_val]  = idx
+                idx += 1 
+
+        for relationship in metadata.relationships:
+            if relationship['parent_table_name'] != parent_table_name:
+                continue
+            if relationship['child_table_name'] not in id_map:
+                id_map[relationship['child_table_name']] = {}
+            
+            id_map[relationship['child_table_name']][relationship['child_foreign_key']] = id_map[parent_table_name][relationship['parent_primary_key']]
+
+            # id_map[parent_table_name][relationship['child_table_name']] = tables[parent_table_name][relationship['parent_primary_key']]
+
+    for table_name in id_map.keys():
+        for column_name in id_map[table_name].keys():
+            if column_name not in tables[table_name].columns:
+                raise ValueError(f"Column {column_name} not found in table {table_name}")
+            tables[table_name][column_name] = tables[table_name][column_name].map(id_map[table_name][column_name])
+
+        
+
             
 
     # set connections
@@ -74,10 +93,12 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
         parent_table = relationship['parent_table_name']
         child_table = relationship['child_table_name']
         parent_column = relationship['parent_primary_key']
-        child_column = relationship['child_foreign_key']
+        foreign_key = relationship['child_foreign_key']
 
-        data[parent_table, 'to', child_table].edge_index = torch.tensor(tables[child_table][[parent_column, child_column]].values.T.astype('int64'))
-        data[child_table, 'from', parent_table].edge_index = torch.tensor(tables[child_table][[child_column, parent_column]].values.T.astype('int64'))
+        child_primary_key = metadata.get_primary_key(child_table)
+
+        data[parent_table, 'to', child_table].edge_index = torch.tensor(tables[child_table][[foreign_key, child_primary_key]].values.T.astype('int64'))
+        data[child_table, 'from', parent_table].edge_index = torch.tensor(tables[child_table][[child_primary_key, foreign_key]].values.T.astype('int64'))
 
     # set connection to target
     target_primary_key = metadata.tables[target_table].primary_key
