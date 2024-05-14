@@ -46,10 +46,22 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
     for key in metadata.get_tables():
         id_cols = metadata.get_column_names(key, sdtype='id')
         temp_table = tables[key].drop(columns=id_cols)
+        if key in categories:
+            categorical_columns = metadata.get_column_names(key, sdtype='categorical')
+            for column in categorical_columns:
+                if 'missing' in categories[key][column]:
+                    # add missing category
+                    temp_table[column] = temp_table[column].cat.add_categories('missing')
+                    temp_table[column] = temp_table[column].fillna('missing')
+                    temp_table[column] = pd.Categorical(temp_table[column], categories=categories[key][column])
 
         if key not in ht_dict or split == "train":
-            categories[key] = dict()
+            categories[key] = {}
             for column in metadata.get_column_names(key, sdtype='categorical'):
+                # add missing category
+                if temp_table[column].isna().sum() > 0:
+                    temp_table[column] = temp_table[column].cat.add_categories('missing')
+                    temp_table[column] = temp_table[column].fillna('missing')
                 categories[key][column] = temp_table[column].unique()
             ht_ = CustomHyperTransformer()
             numerical_dtypes = temp_table.dtypes[temp_table.dtypes == 'float64'].index
@@ -58,8 +70,7 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
             ht_dict[key] = ht_
         else:
             ht_ = ht_dict[key]
-            for column in metadata.get_column_names(key, sdtype='categorical'):
-                temp_table[column] = pd.Categorical(temp_table[column], categories=categories[key][column])
+            
 
         temp_table = ht_.transform(temp_table)
         tables[key] = pd.concat([tables[key][id_cols], temp_table], axis=1)
