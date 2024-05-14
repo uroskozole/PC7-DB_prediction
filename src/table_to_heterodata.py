@@ -3,28 +3,54 @@ import torch_geometric.transforms as T
 import torch
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 from utils.metadata import Metadata
 from utils.data import load_tables, remove_sdv_columns
 from utils.utils import CustomHyperTransformer
 
+
 DATA_DIR = "./data"
 
-def csv_to_hetero(database_name, target_table, target_column):
+def csv_to_hetero_splits(database_name, target_table, target_column):
+    data_train, ht_dict = csv_to_hetero(database_name, target_table, target_column, split='train')
+    data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict)
+    data_test = csv_to_hetero(database_name, target_table, target_column, split='test', ht_dict=ht_dict)
+
+    return data_train, data_val, data_test
+
+def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None):
+
+    data_path = Path(f'{DATA_DIR}/{database_name}')
+
+    if split is not None:
+        data_path = data_path / 'split' / split
+    
     metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
 
-    tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
+    tables = load_tables(data_path, metadata)
     tables, metadata = remove_sdv_columns(tables, metadata)
     y = tables[target_table].pop(target_column)
 
     data = HeteroData()
 
-    # tranform to numerical
-    ht = CustomHyperTransformer()
+    ht_dict = {} if ht_dict is None else ht_dict
+
+    ht_ = None
+
+    # tranform to numerical        
     for key in metadata.get_tables():
         id_cols = metadata.get_column_names(key, sdtype='id')
         temp_table = tables[key].drop(columns=id_cols)
-        temp_table = ht.fit_transform(temp_table)
+
+        if key not in ht_dict or split == "train":
+            ht_ = CustomHyperTransformer()
+            ht_.fit(temp_table)
+            ht_dict[key] = ht_
+        else:
+            ht_ = ht_dict[key]
+
+        temp_table = ht_.transform(temp_table)
         tables[key] = pd.concat([tables[key][id_cols], temp_table], axis=1)
 
     id_map = {}
@@ -83,6 +109,9 @@ def csv_to_hetero(database_name, target_table, target_column):
     transform = T.Compose([
         T.AddSelfLoops(),
     ])
+
+    if split == "train":
+        return transform(data), ht_dict
 
     return transform(data)
 
