@@ -104,7 +104,8 @@ def split_data(database_name, target_table=None, train_range=None, val_range=Non
     metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
     
     tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
-    tables, metadata = remove_sdv_columns(tables, metadata)
+    # for some reason our other files assume the split data has sdv columns removed
+    # tables, metadata = remove_sdv_columns(tables, metadata)
 
     if target_table is not None:
         train_tables, val_tables, test_tables = split_train_val_test(tables, metadata, target_table, val_ratio=val_ratio, test_ratio=test_ratio)
