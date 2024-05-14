@@ -1,24 +1,25 @@
+from pathlib import Path
+
 from torch_geometric.data import HeteroData
 import torch_geometric.transforms as T
 import torch
 import pandas as pd
-from pathlib import Path
 
 from utils.metadata import Metadata
-from utils.data import load_tables, remove_sdv_columns
+from utils.data import load_tables, remove_sdv_columns, make_column_names_unique
 from utils.utils import CustomHyperTransformer
 
 
 DATA_DIR = "./data"
 
 def csv_to_hetero_splits(database_name, target_table, target_column):
-    data_train, ht_dict = csv_to_hetero(database_name, target_table, target_column, split='train')
-    data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict)
-    data_test = csv_to_hetero(database_name, target_table, target_column, split='test', ht_dict=ht_dict)
+    data_train, ht_dict, categories = csv_to_hetero(database_name, target_table, target_column, split='train')
+    data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict, categories=categories)
+    data_test = csv_to_hetero(database_name, target_table, target_column, split='test', ht_dict=ht_dict, categories=categories)
 
     return data_train, data_val, data_test
 
-def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None):
+def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None, categories=None):
 
     data_path = Path(f'{DATA_DIR}/{database_name}')
 
@@ -29,7 +30,9 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
 
     tables = load_tables(data_path, metadata)
     tables, metadata = remove_sdv_columns(tables, metadata)
-    y = tables[target_table].pop(target_column)
+    tables, metadata = make_column_names_unique(tables, metadata)
+
+    y = tables[target_table].pop(f'{target_table}_{target_column}')
 
     data = HeteroData()
 
@@ -37,12 +40,17 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
 
     ht_ = None
 
-    # tranform to numerical        
+    # tranform to numerical  
+    if categories is None:
+        categories = {}
     for key in metadata.get_tables():
         id_cols = metadata.get_column_names(key, sdtype='id')
         temp_table = tables[key].drop(columns=id_cols)
 
         if key not in ht_dict or split == "train":
+            categories[key] = dict()
+            for column in metadata.get_column_names(key, sdtype='categorical'):
+                categories[key][column] = temp_table[column].unique()
             ht_ = CustomHyperTransformer()
             numerical_dtypes = temp_table.dtypes[temp_table.dtypes == 'float64'].index
             temp_table[numerical_dtypes].fillna(0, inplace=True)
@@ -50,6 +58,8 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
             ht_dict[key] = ht_
         else:
             ht_ = ht_dict[key]
+            for column in metadata.get_column_names(key, sdtype='categorical'):
+                temp_table[column] = pd.Categorical(temp_table[column], categories=categories[key][column])
 
         temp_table = ht_.transform(temp_table)
         tables[key] = pd.concat([tables[key][id_cols], temp_table], axis=1)
@@ -130,7 +140,7 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
     ])
 
     if split == "train":
-        return transform(data), ht_dict
+        return transform(data), ht_dict, categories
 
     return transform(data)
 

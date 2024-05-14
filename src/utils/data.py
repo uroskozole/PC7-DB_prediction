@@ -24,6 +24,7 @@ def load_tables(data_path, metadata):
         tables[table_name] = table
     return tables
 
+
 def remove_sdv_columns(tables, metadata, update_metadata=True):
     """
     "_v1" Versions of the relational demo datasets in SDV have some columns that are not present in the original datasets.
@@ -44,6 +45,7 @@ def remove_sdv_columns(tables, metadata, update_metadata=True):
     metadata.validate_data(tables)
     return tables, metadata
 
+
 def save_tables(tables, path):
     if not os.path.exists(path):
         os.makedirs(path)
@@ -60,6 +62,7 @@ def download_sdv_relational_datasets():
         # TODO: data/downloads or data/original
         download_demo('multi_table', dataset_name, output_folder_name=f'data/downloads/{dataset_name}')
         print('Done.')
+
 
 def denormalize_tables(tables, metadata):
     relationships = metadata.relationships.copy()
@@ -98,28 +101,21 @@ def denormalize_tables(tables, metadata):
     
     return denormalized_table
 
+
 def drop_column_if_in_table(table, column):
     if column in table.columns:
         table = table.drop(columns = column, axis=1)
     return table
 
-def make_column_names_unique(real_data, synthetic_data, metadata, validate=True):  
+
+def make_column_names_unique(data, metadata, validate=True):  
     for table_name in metadata.get_tables():
-        if not real_data[table_name].columns.equals(synthetic_data[table_name].columns):
-            raise ValueError("Real and synthetic data column names are not the same")
         
         table_metadata = metadata.tables[table_name].to_dict()
 
         for column in table_metadata['columns']:
-            real_data[table_name] = real_data[table_name].rename(columns={column: f"{table_name}_{column}"})
-            synthetic_data[table_name] = synthetic_data[table_name].rename(columns={column: f"{table_name}_{column}"})
+            data[table_name] = data[table_name].rename(columns={column: f"{table_name}_{column}"})
             metadata = metadata.rename_column(table_name, column, f"{table_name}_{column}")
 
-    # TODO: this should not be optional
-    if validate:
-        metadata.validate()
-        metadata.validate_data(real_data)
-        metadata.validate_data(synthetic_data)
-
-    return real_data, synthetic_data, metadata
+    return data, metadata
     

@@ -79,8 +79,16 @@ def train(model, data_train, data_val = None, data_test = None, num_epochs=10000
 
 
 if __name__ == '__main__':
-    data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers')
-    # data_train = csv_to_hetero('rossmann', 'historical', 'Customers')
+    # data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers')
+    data_train, data_val, data_test = csv_to_hetero_splits('Biodegradability_v1', 'molecule', 'activity')
+    
+    # sanity check that feature dimensions match
+    from utils.metadata import Metadata
+    metadata = Metadata().load_from_json(f'data/Biodegradability_v1/metadata.json')
+    for table in metadata.get_tables():
+        print(table)
+        print(data_train[table].x.shape, data_val[table].x.shape, data_test[table].x.shape)
+        assert data_train[table].x.shape[1] == data_val[table].x.shape[1] == data_test[table].x.shape[1]
 
-    model = build_hetero_gnn('GraphSAGE', data_train, aggr='mean', types=list(data_train.x_dict.keys()), hidden_channels=128, num_layers=3, out_channels=1, mlp=True)
+    model = build_hetero_gnn('GraphSAGE', data_train, aggr='mean', types=list(data_train.x_dict.keys()), hidden_channels=128, num_layers=5, out_channels=1, mlp=True)
     train(model, data_train, data_val, data_test, num_epochs=1000)
