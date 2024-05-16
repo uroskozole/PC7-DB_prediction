@@ -32,6 +32,7 @@ def build_hetero_gnn(model_type, data: HeteroData, types: list, hidden_channels:
     if mlp:
         out_channels_mlp = out_channels
         out_channels = hidden_channels
+        mlp_layers = model_kwargs.pop('mlp_layers', 3)
     if model_type == 'GAT':
         model = GAT(in_channels=hidden_channels, hidden_channels=hidden_channels, num_layers=num_layers, out_channels=out_channels, add_self_loops=False, **model_kwargs)
     elif model_type == 'EdgeCNN':
@@ -54,7 +55,8 @@ def build_hetero_gnn(model_type, data: HeteroData, types: list, hidden_channels:
     if mlp:
         dropout = model_kwargs.get('dropout', 0.0)
         model_layers.append((TargetMLP(in_channels=hidden_channels, hidden_channels= 2 * hidden_channels, 
-                                 out_channels=out_channels_mlp, num_layers=3, dropout=dropout), 'y -> target'))
+                                 out_channels=out_channels_mlp, num_layers=mlp_layers, dropout=dropout), 'y -> target'))
+
     model = Sequential('x_dict, edge_index', model_layers)
     return model
 
