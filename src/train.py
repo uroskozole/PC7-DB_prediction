@@ -12,7 +12,7 @@ from datetime import datetime
 
 from tensorboardX import SummaryWriter
 
-from hetero_gnns import build_hetero_gnn
+from realog.hetero_gnns import build_hetero_gnn
 from realog.table_to_heterodata import csv_to_hetero, csv_to_hetero_splits
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
