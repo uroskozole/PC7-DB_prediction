@@ -19,6 +19,7 @@ tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
 tables, metadata = remove_sdv_columns(tables, metadata)
 
 df_account = tables["account"]
+df_account.drop(columns=["date"], inplace=True)
 
 # merge client to disp
 df_disp = tables["disp"].merge(tables["client"], on="client_id", how="left")
@@ -59,7 +60,15 @@ df_disp = df_disp[df_disp["type_x"] == "OWNER"]
 
 df_account = df_account.merge(df_disp, on="account_id", how="left")
 
-## agregate trans and merge to account
+## merge this account to loan
+df_loan = tables["loan"]
+# rename date column
+df_loan.rename(columns={"date": "date_loan"}, inplace=True)
+df_loan.rename(columns={"amount": "amount_loan"}, inplace=True)
+
+df_loan = df_loan.merge(df_account, on="account_id", how="left")
+
+## agregate trans and merge to loan
 df_trans = tables["trans"]
 
 ohe_cols = ["type", "operation", "k_symbol"]
@@ -70,46 +79,51 @@ for col in ohe_cols:
     df_trans.drop(columns=[col], inplace=True)
     dummies_cols.extend(dummies.columns)
 
-counts = df_trans.groupby("account_id")[dummies_cols].sum()
-df_trans_agg = pd.DataFrame(counts, columns=dummies_cols)
-# df_trans = df_trans.merge(counts, on="account_id", how="left")
+df_loan_trans = df_loan.merge(df_trans, on="account_id", how="left")
+df_loan_trans["time_flag"] = df_loan_trans["date_loan"] > df_loan_trans["date"]
+df_loan_trans = df_loan_trans[df_loan_trans["time_flag"]]
 
-balance_std = df_trans.groupby("account_id")["balance"].std()
-# balance_std_df = pd.DataFrame(balance_std, columns=["balance_std"])
-df_trans_agg = df_trans_agg.merge(balance_std, on="account_id", how="left")
+current_balance = df_loan_trans.groupby("account_id").apply(lambda x: x.sort_values(by='date').iloc[0])["balance"]
 
-# df_trans = df_trans.merge(balance_std, on="account_id", how="left")
-# df_trans.drop("balance", axis=1, inplace=True)
+# df_loan_agg = df_loan.groupby("account_id").sum()
+counts = df_loan_trans.groupby("account_id")[dummies_cols].sum()
+counts = pd.DataFrame(counts, columns=dummies_cols)
 
-amount = df_trans.groupby("account_id")["amount"].sum()
-# amount = pd.DataFrame(amount, columns=["amount_sum"])
-df_trans_agg = df_trans_agg.merge(amount, on="account_id", how="left")
+#balance_std = df_loan_trans.groupby("account_id")["balance"].std()
 
-df_account = df_account.merge(df_trans_agg, on="account_id", how="left")
+amount = df_loan_trans.groupby("account_id")["amount"].sum()
+# amount = pd.DataFrame(amount, columns=dummies_cols)
 
-## aggregate order and merge to account
+df_loan = df_loan.merge(counts, on="account_id", how="left")
+
+# df_loan.drop(columns=["balance"], inplace=True)
+# df_loan = df_loan.merge(balance_std, on="account_id", how="left")
+df_loan = df_loan.merge(current_balance, on="account_id", how="left")
+
+# df_loan.drop(columns=["amount"], inplace=True)
+df_loan = df_loan.merge(amount, on="account_id", how="left")
+
+## aggregate order and merge to loan
 df_order = tables["order"]
 df_order_agg = df_order.groupby("account_id")["amount"].sum()
 
-df_account = df_account.merge(df_order_agg, on="account_id", how="left")
+df_loan = df_loan.merge(df_order_agg, on="account_id", how="left")
 
-## merge final account to loan
-df_loan = tables["loan"]
-df_loan = df_loan.merge(df_account, on="account_id", how="left")
-
+## process the dataset
 drop_cols = ["loan_id", 
              "account_id", 
-             "date_x", 
-             "date_y", 
-             "disp_id", 
-             "client_id", 
-             "type_x", 
-             "type_y",
+             "date_loan",
+             "disp_id",
+             "client_id",
+             "type_x",
              "card_id",
+                "type_y",
+
+
              ]
 
 ohe_cols = ["gender", "frequency", "district_id"]
-num_cols = ["amount_x", "amount_y", "balance", "n_clients", "age", "payments", "duration", "amount"]
+num_cols = ["amount_x", "amount_y", "balance", "n_clients", "age", "payments", "duration", "amount_loan"]
 
 df_loan.drop(columns=drop_cols, inplace=True)
 
