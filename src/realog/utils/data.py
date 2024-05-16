@@ -1,5 +1,7 @@
 import os
 
+from copy import deepcopy
+
 import pandas as pd
 from sdv.datasets.demo import get_available_demos, download_demo
 
@@ -31,6 +33,7 @@ def remove_sdv_columns(tables, metadata, update_metadata=True):
     We created this function to remove these columns from the tables and the metadata.
     We have also created the following issue in the SDV repo which adresses this problem: https://github.com/sdv-dev/SDV/issues/1776
     """
+    metadata = deepcopy(metadata)
     for table_name, table in tables.items():
         for column in table.columns:
             if any(prefix in column for prefix in ['add_numerical', 'nb_rows_in', 'min(', 'max(', 'sum(']):

@@ -22,8 +22,8 @@ tables_train, metadata_train = remove_sdv_columns(tables_train, metadata)
 tables_test, metadata_test = remove_sdv_columns(tables_test, metadata)
 # y = tables[target_table].pop(target_column)
 
-denormalized_table_train = denormalize_tables(tables_train, metadata)
-denormalized_table_test = denormalize_tables(tables_test, metadata)
+denormalized_table_train = denormalize_tables(tables_train, metadata_train)
+denormalized_table_test = denormalize_tables(tables_test, metadata_test)
 # rename column type_bond
 # denormalized_table = denormalized_table.rename(columns={9: "type_bond_1", 10: "type_bond_2"}, errors="raise")
 # rename duplicately-named columns
