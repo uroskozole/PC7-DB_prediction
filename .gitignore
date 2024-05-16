@@ -2,6 +2,9 @@
 data/
 logs/
 
+src/sandbox.ipynb
+src/uros.py
+
 ## Core latex/pdflatex auxiliary files:
 *.aux
 *.lof
