@@ -1,4 +1,3 @@
-# %%
 from pathlib import Path
 from copy import deepcopy
 
@@ -6,10 +5,9 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from utils.metadata import Metadata
-from utils.data import denormalize_tables, load_tables, remove_sdv_columns, save_tables
+from realog.utils.metadata import Metadata
+from realog.utils.data import denormalize_tables, load_tables, save_tables
 
-DATA_DIR = "./data"
 
 def split_on_time(tables, metadata, train_range, val_range, test_range, date_columns=None):
     tables_to_merge = deepcopy(tables)
@@ -58,7 +56,7 @@ def split_on_time(tables, metadata, train_range, val_range, test_range, date_col
     return train_tables, val_tables, test_tables
 
 
-def split_train_val_test(tables, metadata, target_table, val_ratio=0.1, test_ratio=0.1):
+def split_train_val_test(tables, metadata, target_table, val_ratio=0.1, test_ratio=0.1, random_state=42):
     tables_to_merge = deepcopy(tables)
 
     for table in tables.keys():
@@ -73,8 +71,8 @@ def split_train_val_test(tables, metadata, target_table, val_ratio=0.1, test_rat
     
     target_pk = metadata.get_primary_key(target_table)
     indices = tables_to_merge[target_table][target_pk].values
-    train_indices, test_indices = train_test_split(indices, test_size=test_ratio, random_state=42)
-    train_indices, val_indices = train_test_split(train_indices, test_size=val_ratio, random_state=42)
+    train_indices, test_indices = train_test_split(indices, test_size=test_ratio, random_state=random_state)
+    train_indices, val_indices = train_test_split(train_indices, test_size=val_ratio, random_state=random_state)
 
     denormalized = denormalize_tables(tables_to_merge, metadata)
 
@@ -102,23 +100,23 @@ def split_train_val_test(tables, metadata, target_table, val_ratio=0.1, test_rat
     return train_tables, val_tables, test_tables
 
 
-def split_data(database_name, target_table=None, train_range=None, val_range=None, test_range=None, date_columns=None, val_ratio=0.1, test_ratio=0.1):
+def split_data(database_name, data_dir='data', target_table=None, train_range=None, val_range=None, test_range=None, date_columns=None, val_ratio=0.1, test_ratio=0.1, random_state=42):
     print(f"Splitting data for {database_name}")
-    metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
+    metadata = Metadata().load_from_json(f'{data_dir}/{database_name}/metadata.json')
     
-    tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
+    tables = load_tables(f'{data_dir}/{database_name}/', metadata)
     # for some reason our other files assume the split data has sdv columns removed
     # tables, metadata = remove_sdv_columns(tables, metadata)
 
     if target_table is not None:
-        train_tables, val_tables, test_tables = split_train_val_test(tables, metadata, target_table, val_ratio=val_ratio, test_ratio=test_ratio)
+        train_tables, val_tables, test_tables = split_train_val_test(tables, metadata, target_table, val_ratio=val_ratio, test_ratio=test_ratio, random_state=random_state)
     elif train_range is not None:
         train_tables, val_tables, test_tables = split_on_time(tables, metadata, train_range, val_range, test_range, date_columns=date_columns)
     else:
         raise ValueError('Either target_table or train_range must be provided')
         
     
-    split_dir = Path(DATA_DIR) / database_name / 'split'
+    split_dir = Path(data_dir) / database_name / 'split'
     split_dir.mkdir(parents=True, exist_ok=True)
     for split in ['train', 'val', 'test']:
         (split_dir / split).mkdir(parents=True, exist_ok=True)
@@ -127,28 +125,3 @@ def split_data(database_name, target_table=None, train_range=None, val_range=Non
     save_tables(val_tables, split_dir / 'val')
     save_tables(test_tables, split_dir / 'test')
     print("Data split and saved!")
-
-
-# %%
-if __name__ == '__main__':
-    # Rossmann dataset
-    # train_range = (pd.to_datetime('2013-01-01'), pd.to_datetime('2015-01-01'))
-    # val_range = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
-    # test_range = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
-    # date_columns = ['Date']
-    # split_data("rossmann", train_range=train_range, val_range=val_range, test_range=test_range, date_columns=date_columns)
-
-    # # Financial dataset
-    train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1997-01-01'))
-    val_range = (pd.to_datetime('1997-01-01'), pd.to_datetime('1998-01-01'))
-    test_range = (pd.to_datetime('1998-01-01'), pd.to_datetime('1999-01-01'))
-
-    # train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1994-01-01'))
-    # val_range = (pd.to_datetime('1994-01-01'), pd.to_datetime('1995-01-01'))
-    # test_range = (pd.to_datetime('1995-01-01'), pd.to_datetime('1996-01-01'))
-
-    date_columns = ['date']
-    split_data("financial_v1", train_range=train_range, val_range=val_range, test_range=test_range, date_columns=date_columns)
-
-    # Biodegradability dataset
-    # split_data("Biodegradability_v1", target_table='molecule')
