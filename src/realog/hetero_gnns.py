@@ -52,7 +52,7 @@ def build_hetero_gnn(model_type, data: HeteroData, types: list, hidden_channels:
         (gnn_model, 'x1, edge_index -> y'),
     ]
     if mlp:
-        dropout = model_kwargs.get('dropout', 0)
+        dropout = model_kwargs.get('dropout', 0.0)
         model_layers.append((TargetMLP(in_channels=hidden_channels, hidden_channels= 2 * hidden_channels, 
                                  out_channels=out_channels_mlp, num_layers=3, dropout=dropout), 'y -> target'))
     model = Sequential('x_dict, edge_index', model_layers)
