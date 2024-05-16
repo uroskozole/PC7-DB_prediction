@@ -1,5 +1,6 @@
 ## Project directories:
 data/
+logs/
 
 ## Core latex/pdflatex auxiliary files:
 *.aux

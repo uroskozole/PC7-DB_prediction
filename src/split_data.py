@@ -1,3 +1,4 @@
+# %%
 from pathlib import Path
 from copy import deepcopy
 
@@ -17,8 +18,10 @@ def split_on_time(tables, metadata, train_range, val_range, test_range, date_col
         for column, column_info in table_metadata['columns'].items():
             if column_info['sdtype'] == 'id':
                 # set id to int32 if possible
-                if tables_to_merge[table][column].dtype == 'int64' and tables_to_merge[table][column].max() <= np.iinfo('int32').max:
+                if tables_to_merge[table][column].max() <= np.iinfo('int32').max:
                     tables_to_merge[table][column] = tables_to_merge[table][column].astype('int32')
+                else:
+                    raise ValueError(f"ID column {column} in table {table} has values greater than int32")
             elif column_info['sdtype'] == 'datetime':
                 if date_columns is not None and column not in date_columns:
                     tables_to_merge[table].drop(column, axis=1, inplace=True)
@@ -126,21 +129,26 @@ def split_data(database_name, target_table=None, train_range=None, val_range=Non
     print("Data split and saved!")
 
 
+# %%
 if __name__ == '__main__':
     # Rossmann dataset
-    train_range = (pd.to_datetime('2013-01-01'), pd.to_datetime('2015-01-01'))
-    val_range = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
-    test_range = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
-    date_columns = ['Date']
-    split_data("rossmann", train_range=train_range, val_range=val_range, test_range=test_range, date_columns=date_columns)
+    # train_range = (pd.to_datetime('2013-01-01'), pd.to_datetime('2015-01-01'))
+    # val_range = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
+    # test_range = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
+    # date_columns = ['Date']
+    # split_data("rossmann", train_range=train_range, val_range=val_range, test_range=test_range, date_columns=date_columns)
 
     # # Financial dataset
-    # train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1997-01-01'))
-    # val_range = (pd.to_datetime('1997-01-01'), pd.to_datetime('1998-01-01'))
-    # test_range = (pd.to_datetime('1998-01-01'), pd.to_datetime('1999-01-01'))
+    train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1997-01-01'))
+    val_range = (pd.to_datetime('1997-01-01'), pd.to_datetime('1998-01-01'))
+    test_range = (pd.to_datetime('1998-01-01'), pd.to_datetime('1999-01-01'))
 
-    # date_columns = ['date']
-    # split_data("financial_v1", train_range=train_range, val_range=val_range, test_range=test_range, date_columns=date_columns)
+    # train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1994-01-01'))
+    # val_range = (pd.to_datetime('1994-01-01'), pd.to_datetime('1995-01-01'))
+    # test_range = (pd.to_datetime('1995-01-01'), pd.to_datetime('1996-01-01'))
+
+    date_columns = ['date']
+    split_data("financial_v1", train_range=train_range, val_range=val_range, test_range=test_range, date_columns=date_columns)
 
     # Biodegradability dataset
-    split_data("Biodegradability_v1", target_table='molecule')
+    # split_data("Biodegradability_v1", target_table='molecule')

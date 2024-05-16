@@ -10,7 +10,7 @@ def get_connected_components(data):
     num_components, component = sp.csgraph.connected_components(adj, connection="weak")
     components = dict()
     for i, key in enumerate(data.x_dict.keys()):
-        components[key] = component[homo.node_type == i]
+        components[key] = component[homo.node_type.cpu() == i]
 
     connected_components = []
             
