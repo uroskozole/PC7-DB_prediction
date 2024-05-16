@@ -13,7 +13,7 @@ from datetime import datetime
 from tensorboardX import SummaryWriter
 
 from hetero_gnns import build_hetero_gnn
-from table_to_heterodata import csv_to_hetero, csv_to_hetero_splits
+from realog.table_to_heterodata import csv_to_hetero, csv_to_hetero_splits
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'mps')
 torch.set_default_device(device)
@@ -105,7 +105,7 @@ if __name__ == '__main__':
     data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target)
     
     # sanity check that feature dimensions match
-    from utils.metadata import Metadata
+    from realog.utils.metadata import Metadata
     metadata = Metadata().load_from_json(f'data/{dataset}/metadata.json')
     for table in metadata.get_tables():
         print(table, data_train[table].x.shape[1], data_val[table].x.shape[1], data_test[table].x.shape[1])

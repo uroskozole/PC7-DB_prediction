@@ -2,7 +2,7 @@ import torch
 from torch_geometric.data import HeteroData
 from torch_geometric.nn import to_hetero, Sequential, HeteroDictLinear
 from torch_geometric.nn.models import GAT, EdgeCNN, GraphSAGE, GIN, MLP
-from table_to_heterodata import csv_to_hetero
+from realog.table_to_heterodata import csv_to_hetero
 
 class TargetMLP(torch.nn.Module):
     def __init__(self, in_channels, hidden_channels, out_channels, num_layers):

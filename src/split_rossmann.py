@@ -3,13 +3,13 @@ import pandas as pd
 
 from pathlib import Path
 
-from utils.metadata import Metadata
-from utils.data import load_tables, remove_sdv_columns
+from realog.utils.metadata import Metadata
+from realog.utils.data import load_tables, remove_sdv_columns
 
 DATA_DIR = "./data"
 
-TRAIN_START_DATE = pd.to_datetime('2013-01-01')
-TRAIN_END_DATE = pd.to_datetime('2015-01-01')
+TRAIN_START_DATE = pd.to_datetime('2014-01-01')
+TRAIN_END_DATE = pd.to_datetime('2014-03-01')
 
 VAL_START_DATE = pd.to_datetime('2015-01-01')
 VAL_END_DATE = pd.to_datetime('2015-02-01')

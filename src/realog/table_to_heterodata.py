@@ -5,9 +5,9 @@ import torch_geometric.transforms as T
 import torch
 import pandas as pd
 
-from utils.metadata import Metadata
-from utils.data import load_tables, remove_sdv_columns, make_column_names_unique
-from utils.utils import CustomHyperTransformer
+from realog.utils.metadata import Metadata
+from realog.utils.data import load_tables, remove_sdv_columns, make_column_names_unique
+from realog.utils.utils import CustomHyperTransformer
 
 
 DATA_DIR = "./data"
@@ -157,6 +157,6 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
 
 
 if __name__ == '__main__':
-    data = csv_to_hetero("rossmann_subsampled", "historical", "Customers")
+    # data = csv_to_hetero("rossmann_subsampled", "historical", "Customers")
     # data = csv_to_hetero("Biodegradability_v1", "molecule", "activity")
-    print(data)
+    data = csv_to_hetero_splits("financial_v1", "loan", "amount")
