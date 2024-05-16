@@ -5,12 +5,13 @@ from torch_geometric.nn.models import GAT, EdgeCNN, GraphSAGE, GIN, MLP
 from realog.table_to_heterodata import csv_to_hetero
 
 class TargetMLP(torch.nn.Module):
-    def __init__(self, in_channels, hidden_channels, out_channels, num_layers):
+    def __init__(self, in_channels, hidden_channels, out_channels, num_layers, dropout=0.0):
         super(TargetMLP, self).__init__()
         self.mlp = MLP(in_channels=in_channels, 
                        hidden_channels=hidden_channels, 
                        out_channels=out_channels, 
                        num_layers=num_layers,
+                       dropout=dropout,
                        norm='layer_norm')
 
     def forward(self, x_dict):
@@ -51,8 +52,9 @@ def build_hetero_gnn(model_type, data: HeteroData, types: list, hidden_channels:
         (gnn_model, 'x1, edge_index -> y'),
     ]
     if mlp:
+        dropout = model_kwargs.get('dropout', 0)
         model_layers.append((TargetMLP(in_channels=hidden_channels, hidden_channels= 2 * hidden_channels, 
-                                 out_channels=out_channels_mlp, num_layers=3), 'y -> target'))
+                                 out_channels=out_channels_mlp, num_layers=3, dropout=dropout), 'y -> target'))
     model = Sequential('x_dict, edge_index', model_layers)
     return model
 
