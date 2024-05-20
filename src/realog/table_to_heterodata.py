@@ -12,14 +12,25 @@ from realog.utils.utils import CustomHyperTransformer
 
 DATA_DIR = "./data"
 
-def csv_to_hetero_splits(database_name, target_table, target_column):
-    data_train, ht_dict, categories = csv_to_hetero(database_name, target_table, target_column, split='train')
-    data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict, categories=categories)
-    data_test = csv_to_hetero(database_name, target_table, target_column, split='test', ht_dict=ht_dict, categories=categories)
+def csv_to_hetero_splits(database_name, target_table, target_column, task='regression'):
+    metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
+
+    tables = load_tables(Path(f'{DATA_DIR}/{database_name}'), metadata)
+    tables, metadata = remove_sdv_columns(tables, metadata)
+    tables, metadata = make_column_names_unique(tables, metadata)
+    categories = {}
+    for table in metadata.get_tables():
+        categories[table] = {}
+        for column in metadata.get_column_names(table, sdtype='categorical'):
+            categories[table][column] = tables[table][column].unique()
+
+    data_train, ht_dict, _ = csv_to_hetero(database_name, target_table, target_column, split='train', categories=categories, task=task)
+    data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict, categories=categories, task=task)
+    data_test = csv_to_hetero(database_name, target_table, target_column, split='test', ht_dict=ht_dict, categories=categories, task=task)
 
     return data_train, data_val, data_test
 
-def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None, categories=None):
+def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None, categories=None, task='regression'):
 
     data_path = Path(f'{DATA_DIR}/{database_name}')
 
@@ -32,7 +43,17 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
     tables, metadata = remove_sdv_columns(tables, metadata)
     tables, metadata = make_column_names_unique(tables, metadata)
 
-    y = tables[target_table].pop(f'{target_table}_{target_column}')
+    if categories is None:
+        categories = {}
+
+    if task == 'regression':
+        y = tables[target_table].pop(f'{target_table}_{target_column}')
+    elif task == 'classification':
+        if target_table not in categories:
+            categories[target_table] = {}
+            categories[target_table][f'{target_table}_{target_column}'] = tables[target_table][f'{target_table}_{target_column}'].unique()
+        y = tables[target_table].pop(f'{target_table}_{target_column}')
+        y = pd.Categorical(y, categories=categories[target_table][f'{target_table}_{target_column}']).codes
 
     data = HeteroData()
 
@@ -41,14 +62,14 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
     ht_ = None
 
     # tranform to numerical  
-    if categories is None:
-        categories = {}
     for key in metadata.get_tables():
         id_cols = metadata.get_column_names(key, sdtype='id')
         temp_table = tables[key].drop(columns=id_cols)
         if key in categories:
             categorical_columns = metadata.get_column_names(key, sdtype='categorical')
             for column in categorical_columns:
+                if column == f'{target_table}_{target_column}':
+                    continue
                 if 'missing' in categories[key][column]:
                     # add missing category
                     temp_table[column] = temp_table[column].cat.add_categories('missing')
@@ -56,8 +77,10 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
                     temp_table[column] = pd.Categorical(temp_table[column], categories=categories[key][column])
 
         if key not in ht_dict or split == "train":
-            categories[key] = {}
+            categories.setdefault(key, {})
             for column in metadata.get_column_names(key, sdtype='categorical'):
+                if column == f'{target_table}_{target_column}':
+                    continue
                 # add missing category
                 if temp_table[column].isna().sum() > 0:
                     temp_table[column] = temp_table[column].cat.add_categories('missing')
@@ -138,7 +161,11 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
 
     
     data['target'].x = torch.zeros((tables[target_table].shape[0], 1), dtype=torch.float32)
-    data['target'].y = torch.tensor(y.values.reshape(-1, 1), dtype=torch.float32)
+    if task == 'classification':
+        data['target'].y = torch.tensor(y, dtype=torch.long)
+        data['target'].num_classes = len(categories[target_table][f'{target_table}_{target_column}'])
+    elif task == 'regression':
+        data['target'].y = torch.tensor(y.values.reshape(-1, 1), dtype=torch.float32)
 
     for key in metadata.get_tables():
         std = data[key].x.std(dim=0)
