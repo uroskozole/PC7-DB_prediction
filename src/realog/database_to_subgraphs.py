@@ -5,7 +5,7 @@ import torch_geometric.transforms as T
 from torch_geometric.data import HeteroData
 
 
-def create_graph_tables(idx, tables, metadata, target_table, use_historical=False):
+def create_graph_tables(idx, tables, metadata, target_table, use_historical=True):
     graph_tables = {}
     target_row = tables[target_table].iloc[idx]
     date_columns = metadata.get_column_names(target_table, sdtype='datetime')

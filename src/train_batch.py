@@ -1,26 +1,19 @@
 from tqdm import tqdm
 from torch import optim
 import torch.nn.functional as F
-from torch_geometric.sampler import BaseSampler
-from torch_geometric.loader import HGTLoader, NodeLoader, NeighborLoader, DataLoader
-from torch_geometric.datasets import OGB_MAG
-import torch_geometric.transforms as T
+from torch_geometric.loader import DataLoader
 import torch
 import numpy as np
 
-from datetime import datetime
 
-from tensorboardX import SummaryWriter
 
 from realog.utils.metadata import Metadata
 from realog.hetero_gnns import build_hetero_gnn
-from realog.table_to_heterodata import csv_to_hetero, csv_to_hetero_splits
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device='cpu'
 torch.set_default_device(device)
 
-def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, patience=50, lr=0.01, weight_decay=0.1, class_weights=None, reduce_fac=0.1):
+def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, lr=0.01, weight_decay=0.1, class_weights=None):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
@@ -31,15 +24,14 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
     model.train()
     val_loss = None
     best_loss = np.inf
-    _patience = patience
     # from samplers import get_connected_components
-    trainloader = DataLoader(data_train, batch_size=64, shuffle=False, 
+    trainloader = DataLoader(data_train, batch_size=2, shuffle=False, 
                             #  generator=torch.Generator(device=device), drop_last=True
                             )
-    valloader = DataLoader(data_val, batch_size=64, shuffle=False, 
+    valloader = DataLoader(data_val, batch_size=32, shuffle=False, 
                         #    generator=torch.Generator(device=device), 
                            drop_last=False)
-    testloader = DataLoader(data_test, batch_size=64, shuffle=False, 
+    testloader = DataLoader(data_test, batch_size=128, shuffle=False, 
                             # generator=torch.Generator(device=device), 
                             drop_last=False)
 
@@ -54,6 +46,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         pbar = tqdm(trainloader)
         model.train()
         for batch in pbar:
+            batch = batch.to(device)
             optimizer.zero_grad()
             out = model(batch.x_dict, batch.edge_index_dict)
 
@@ -65,8 +58,24 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             loss.backward()
             optimizer.step()
             pbar.set_postfix({'train_loss': np.mean(train_loss), 'train_acc': np.mean(train_acc)})
-            print(f'TRAIN: True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
+            # print(f'TRAIN: True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
+            # # compute recall and precision for class 1
+            # pos_mask = batch['target'].y == 1
+            # pos_pred_mask = out['target'].argmax(dim=-1) == 1
+            # true_pos = (pos_mask & pos_pred_mask).sum().item()
+            # false_pos = (~pos_mask & pos_pred_mask).sum().item()
+            # false_neg = (pos_mask & ~pos_pred_mask).sum().item()
+            # if true_pos + false_pos > 0:
+            #     precision = true_pos / (true_pos + false_pos)
+            # else:
+            #     precision = np.nan
+            # if true_pos + false_neg > 0:
+            #     recall = true_pos / (true_pos + false_neg)
+            # else:
+            #     recall = np.nan
+            # print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
 
+        # validation
         model.eval()
         with torch.no_grad():
             pbar = tqdm(valloader)
@@ -74,6 +83,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             val_correct = 0
             val_total = 0
             for batch in pbar:
+                batch = batch.to(device)
                 out = model(batch.x_dict, batch.edge_index_dict)
                 loss = loss_fn(out['target'], batch['target'].y)
                 val_loss.append(loss.item())
@@ -82,7 +92,16 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
                     total = batch['target'].y.size(0)
                     val_correct += correct
                     val_total += total
-                    print(f'VAL  : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
+                    # print(f'VAL  : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
+                    # compute recall and precision for class 1
+                    # pos_mask = batch['target'].y == 1
+                    # pos_pred_mask = out['target'].argmax(dim=-1) == 1
+                    # true_pos = (pos_mask & pos_pred_mask).sum().item()
+                    # false_pos = (~pos_mask & pos_pred_mask).sum().item()
+                    # false_neg = (pos_mask & ~pos_pred_mask).sum().item()
+                    # precision = true_pos / (true_pos + false_pos) if true_pos + false_pos > 0 else np.nan
+                    # recall = true_pos / (true_pos + false_neg) if true_pos + false_neg > 0 else np.nan
+                    # print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
                 pbar.set_postfix({'val_loss': np.mean(val_loss), 'val_acc': val_correct / val_total})
             
         if np.mean(val_loss) < best_loss:
@@ -106,27 +125,37 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         else:
             scheduler.step()
 
+    model.load_state_dict(best_model)
 
-    # model.load_state_dict(best_model)
+    # evaluate on test set
+    with torch.no_grad():
+        pbar = tqdm(testloader)
+        test_loss = []
+        test_correct = 0
+        test_total = 0
+        for batch in pbar:
+            batch = batch.to(device)
+            out = model(batch.x_dict, batch.edge_index_dict)
+            loss = loss_fn(out['target'], batch['target'].y)
+            test_loss.append(loss.item())
+            if task == 'classification':
+                correct = (out['target'].argmax(dim=-1) == batch['target'].y).sum().item()
+                total = batch['target'].y.size(0)
+                test_correct += correct
+                test_total += total
+                # print(f'TEST : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}') 
+                # compute recall and precision for class 1
+                pos_mask = batch['target'].y == 1
+                pos_pred_mask = out['target'].argmax(dim=-1) == 1
+                true_pos = (pos_mask & pos_pred_mask).sum().item()
+                false_pos = (~pos_mask & pos_pred_mask).sum().item()
+                false_neg = (pos_mask & ~pos_pred_mask).sum().item()
 
-        # evaluate on test set
-        with torch.no_grad():
-            pbar = tqdm(testloader)
-            test_loss = []
-            test_correct = 0
-            test_total = 0
-            for batch in pbar:
-                out = model(batch.x_dict, batch.edge_index_dict)
-                loss = loss_fn(out['target'], batch['target'].y)
-                if task == 'classification':
-                    correct = (out['target'].argmax(dim=-1) == batch['target'].y).sum().item()
-                    total = batch['target'].y.size(0)
-                    test_correct += correct
-                    test_total += total
-                test_loss.append(loss.item())
-                print(f'TEST : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
-                # pbar.set_postfix({'test_loss': np.mean(test_loss)})
-            print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
+                precision = true_pos / (true_pos + false_pos) if true_pos + false_pos > 0 else np.nan
+                recall = true_pos / (true_pos + false_neg) if true_pos + false_neg > 0 else np.nan
+                print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
+                print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
+            
 
     print(f'Best Val Loss: {best_loss:.4f} | Test Loss: {np.mean(test_loss):.4f} | Test Acc: {test_correct / test_total:.4f}')
     return model
@@ -184,5 +213,5 @@ if __name__ == '__main__':
 
     print(len(train_data), len(val_data), len(test_data))
     
-    model = build_hetero_gnn('GIN', train_data[idx], aggr='sum', types=node_types, hidden_channels=128, num_layers=4, out_channels=out_channels, mlp_layers=0, model_kwargs={'dropout': 0.1, 'jk':"cat"})
-    train(model, train_data, val_data, test_data, task=task, num_epochs=1000, patience=500, lr=0.0001, weight_decay=0.1, class_weights=weights)
+    model = build_hetero_gnn('GIN', train_data[idx], aggr='mean', types=node_types, hidden_channels=128, num_layers=4, out_channels=out_channels, mlp_layers=3, model_kwargs={'dropout': 0.1, 'jk':'lstm'})
+    train(model, train_data, val_data, test_data, task=task, num_epochs=200, lr=0.0001, weight_decay=0.1, class_weights=weights)
