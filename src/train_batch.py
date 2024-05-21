@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 import torch
 import numpy as np
-
+from sklearn.metrics import f1_score
 
 
 from realog.utils.metadata import Metadata
@@ -25,7 +25,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
     val_loss = None
     best_loss = np.inf
     # from samplers import get_connected_components
-    trainloader = DataLoader(data_train, batch_size=2, shuffle=False, 
+    trainloader = DataLoader(data_train, batch_size=32, shuffle=False, 
                             #  generator=torch.Generator(device=device), drop_last=True
                             )
     valloader = DataLoader(data_val, batch_size=32, shuffle=False, 
@@ -139,8 +139,10 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             loss = loss_fn(out['target'], batch['target'].y)
             test_loss.append(loss.item())
             if task == 'classification':
-                correct = (out['target'].argmax(dim=-1) == batch['target'].y).sum().item()
-                total = batch['target'].y.size(0)
+                preds = out['target'].argmax(dim=-1).cpu().numpy()
+                targets = batch['target'].y.cpu().numpy()
+                correct = (targets == preds).sum().item()
+                total = batch['target'].y.shape[0]
                 test_correct += correct
                 test_total += total
                 # print(f'TEST : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}') 
@@ -153,6 +155,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
 
                 precision = true_pos / (true_pos + false_pos) if true_pos + false_pos > 0 else np.nan
                 recall = true_pos / (true_pos + false_neg) if true_pos + false_neg > 0 else np.nan
+                print('F1 Score: ', f1_score(targets, preds))
                 print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
                 print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
             
@@ -213,5 +216,5 @@ if __name__ == '__main__':
 
     print(len(train_data), len(val_data), len(test_data))
     
-    model = build_hetero_gnn('GIN', train_data[idx], aggr='mean', types=node_types, hidden_channels=128, num_layers=4, out_channels=out_channels, mlp_layers=3, model_kwargs={'dropout': 0.1, 'jk':'lstm'})
-    train(model, train_data, val_data, test_data, task=task, num_epochs=200, lr=0.0001, weight_decay=0.1, class_weights=weights)
+    model = build_hetero_gnn('GIN', train_data[idx], aggr='mean', types=node_types, hidden_channels=128, num_layers=4, out_channels=out_channels, mlp_layers=3, model_kwargs={'dropout': 0.1})
+    train(model, train_data, val_data, test_data, task=task, num_epochs=1, lr=0.0001, weight_decay=0.1, class_weights=weights)
