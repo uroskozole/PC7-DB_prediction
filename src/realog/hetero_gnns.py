@@ -25,14 +25,13 @@ class TargetMLP(torch.nn.Module):
 
 def build_hetero_gnn(model_type, data: HeteroData, types: list, hidden_channels: int = 64, 
                      num_layers: int = 2, out_channels: int = 2, aggr: str = 'sum', 
-                     model_kwargs: dict = {}, mlp: bool = False):
+                     model_kwargs: dict = {}, mlp_layers: int = 0):
     """
     model_types: GAT, EdgeCNN, GCN, GraphSAGE, GIN
     """
-    if mlp:
+    if mlp_layers:
         out_channels_mlp = out_channels
         out_channels = hidden_channels
-        mlp_layers = model_kwargs.pop('mlp_layers', 3)
     if model_type == 'GAT':
         model = GAT(in_channels=hidden_channels, hidden_channels=hidden_channels, num_layers=num_layers, out_channels=out_channels, add_self_loops=False, **model_kwargs)
     elif model_type == 'EdgeCNN':
@@ -52,11 +51,11 @@ def build_hetero_gnn(model_type, data: HeteroData, types: list, hidden_channels:
         (HeteroDictLinear(in_channels=-1, out_channels=hidden_channels, types=types), 'x_dict -> x1'),
         (gnn_model, 'x1, edge_index -> y'),
     ]
-    if mlp:
+    if mlp_layers:
         dropout = model_kwargs.get('dropout', 0.0)
         model_layers.append((TargetMLP(in_channels=hidden_channels, hidden_channels= 2 * hidden_channels, 
                                  out_channels=out_channels_mlp, num_layers=mlp_layers, dropout=dropout), 'y -> target'))
-
+    
     model = Sequential('x_dict, edge_index', model_layers)
     return model
 
