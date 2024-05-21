@@ -30,7 +30,8 @@ def csv_to_hetero_splits(database_name, target_table, target_column, task='regre
 
     return data_train, data_val, data_test
 
-def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None, categories=None, task='regression'):
+
+def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None, categories={}, task='regression'):
 
     data_path = Path(f'{DATA_DIR}/{database_name}')
 
@@ -43,9 +44,10 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
     tables, metadata = remove_sdv_columns(tables, metadata)
     tables, metadata = make_column_names_unique(tables, metadata)
 
-    if categories is None:
-        categories = {}
+    return tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories=None, task='regression', split=None)
 
+
+def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories={}, task='regression', split=None):
     if task == 'regression':
         y = tables[target_table].pop(f'{target_table}_{target_column}')
     elif task == 'classification':
@@ -181,7 +183,6 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
         return transform(data), ht_dict, categories
 
     return transform(data)
-
 
 if __name__ == '__main__':
     # data = csv_to_hetero("rossmann_subsampled", "historical", "Customers")
