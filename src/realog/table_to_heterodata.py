@@ -21,8 +21,12 @@ def csv_to_hetero_splits(database_name, target_table, target_column, task='regre
     categories = {}
     for table in metadata.get_tables():
         categories[table] = {}
-        for column in metadata.get_column_names(table, sdtype='categorical'):
+        for column in metadata.get_column_names(table, sdtype='categorical') + metadata.get_column_names(table, sdtype='boolean'):
+            if tables[table][column].isna().sum() > 0:
+                tables[table][column] =  tables[table][column].cat.add_categories('missing')
+                tables[table][column] =  tables[table][column].fillna('missing')
             categories[table][column] = tables[table][column].unique()
+            
 
     data_train, ht_dict, _ = csv_to_hetero(database_name, target_table, target_column, split='train', categories=categories, task=task)
     data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict, categories=categories, task=task)
@@ -44,7 +48,7 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
     tables, metadata = remove_sdv_columns(tables, metadata)
     tables, metadata = make_column_names_unique(tables, metadata)
 
-    return tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories=None, task='regression', split=None)
+    return tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories=categories, task='regression', split=split)
 
 
 def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories={}, task='regression', split=None):
@@ -76,18 +80,18 @@ def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=
                     # add missing category
                     temp_table[column] = temp_table[column].cat.add_categories('missing')
                     temp_table[column] = temp_table[column].fillna('missing')
-                    temp_table[column] = pd.Categorical(temp_table[column], categories=categories[key][column])
+                temp_table[column] = pd.Categorical(temp_table[column], categories=categories[key][column])
 
         if key not in ht_dict or split == "train":
-            categories.setdefault(key, {})
-            for column in metadata.get_column_names(key, sdtype='categorical'):
-                if column == f'{target_table}_{target_column}':
-                    continue
-                # add missing category
-                if temp_table[column].isna().sum() > 0:
-                    temp_table[column] = temp_table[column].cat.add_categories('missing')
-                    temp_table[column] = temp_table[column].fillna('missing')
-                categories[key][column] = temp_table[column].unique()
+            # categories.setdefault(key, {})
+            # for column in metadata.get_column_names(key, sdtype='categorical'):
+            #     if column == f'{target_table}_{target_column}':
+            #         continue
+            #     # add missing category
+            #     if temp_table[column].isna().sum() > 0:
+            #         temp_table[column] = temp_table[column].cat.add_categories('missing')
+            #         temp_table[column] = temp_table[column].fillna('missing')
+            #     categories[key][column] = temp_table[column].unique()
             ht_ = CustomHyperTransformer()
             numerical_dtypes = temp_table.dtypes[temp_table.dtypes == 'float64'].index
             temp_table[numerical_dtypes].fillna(0, inplace=True)
@@ -187,4 +191,13 @@ def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=
 if __name__ == '__main__':
     # data = csv_to_hetero("rossmann_subsampled", "historical", "Customers")
     # data = csv_to_hetero("Biodegradability_v1", "molecule", "activity")
-    data = csv_to_hetero_splits("financial_v1", "loan", "amount")
+    # data = csv_to_hetero_splits("financial_v1", "loan", "amount")
+    dataset = 'Biodegradability_v1'
+    target_table = 'molecule'
+    target = 'activity'
+    task = 'regression'
+    # dataset = "rossmann"
+    # target_table = "historical"
+    # target = "Customers"
+    # data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers')
+    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task)

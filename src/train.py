@@ -25,7 +25,7 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 150], gamma=0.1)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=0.00001)
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=reduce_fac, patience=20, min_lr=0.00001)
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=reduce_fac, patience=20, min_lr=0.000001)
     model.train()
     pbar = tqdm(range(num_epochs))
     val_loss = None
@@ -110,15 +110,16 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
 
 
 if __name__ == '__main__':
-    dataset = 'Biodegradability_v1'
-    target_table = 'molecule'
-    target = 'activity'
+    # dataset = 'Biodegradability_v1'
+    # target_table = 'molecule'
+    # target = 'activity'
     task = 'regression'
-    # dataset = "rossmann"
-    # target_table = "historical"
-    # target = "Customers"
-    # data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers')
-    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task)
+    dataset = "rossmann_subsampled"
+    target_table = "historical"
+    target = "Customers"
+    data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers')
+    # data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task)
+    
     
     # sanity check that feature dimensions match
     for table in data_train.x_dict.keys():
@@ -128,5 +129,7 @@ if __name__ == '__main__':
         out_channels = data_train['target'].num_classes
     elif task == 'regression':
         out_channels = 1
-    model = build_hetero_gnn('GAT', data_train, aggr='mean', types=list(data_train.x_dict.keys()), hidden_channels=256, num_layers=10, out_channels=out_channels, mlp=True, model_kwargs={'dropout': 0.2, 'mlp_layers': 4})
-    train(model, data_train, data_val, data_test, task=task, num_epochs=1000, patience=500, lr=0.0001, weight_decay=0.1, reduce_fac=0.1)
+    model_name = 'GIN'
+    print(f'Training {model_name} model, dataset: {dataset}, target: {target}, task: {task}')
+    model = build_hetero_gnn(model_name, data_train, aggr='sum', types=list(data_train.x_dict.keys()), hidden_channels=128, num_layers=2, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.0, 'jk':'cat'})
+    train(model, data_train, data_val, data_test, task=task, num_epochs=1000, patience=1000, lr=0.01, weight_decay=0.05, reduce_fac=0.5)
