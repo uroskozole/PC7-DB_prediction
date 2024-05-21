@@ -95,7 +95,7 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
         with torch.no_grad():
             test_out = model(data_test.x_dict, data_test.edge_index_dict)
             test_loss = F.mse_loss(test_out['target'], data_test['target'].y)
-            print(f'Test Loss: {np.sqrt(test_loss.item()):.4f}')
+            print(f'Test Loss: {np.sqrt(test_loss.item()):.4f}, Best Val Loss: {np.sqrt(best_loss.item()):.4f}')
             writer.add_scalar('Loss/test', np.sqrt(test_loss.item()), epoch)
 
         outs = test_out['target'].detach().cpu().numpy()
@@ -121,15 +121,15 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
 
 
 if __name__ == '__main__':
-    # dataset = 'Biodegradability_v1'
-    # target_table = 'molecule'
-    # target = 'activity'
+    dataset = 'Biodegradability_v1'
+    target_table = 'molecule'
+    target = 'activity'
     task = 'regression'
-    dataset = "rossmann_subsampled"
-    target_table = "historical"
-    target = "Customers"
-    data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers')
-    # data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task)
+    # dataset = "rossmann_subsampled"
+    # target_table = "historical"
+    # target = "Customers"
+    # data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers', 'regression', add_skip_connections=False)
+    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task, add_skip_connections=True)
     
     
     # sanity check that feature dimensions match
@@ -142,5 +142,5 @@ if __name__ == '__main__':
         out_channels = 1
     model_name = 'GIN'
     print(f'Training {model_name} model, dataset: {dataset}, target: {target}, task: {task}')
-    model = build_hetero_gnn(model_name, data_train, aggr='sum', types=list(data_train.x_dict.keys()), hidden_channels=128, num_layers=2, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.0, 'jk':'cat'})
-    train(model, data_train, data_val, data_test, task=task, num_epochs=1, patience=1000, lr=0.01, weight_decay=0.05, reduce_fac=0.5)
+    model = build_hetero_gnn(model_name, data_train, aggr='sum', types=list(data_train.x_dict.keys()), hidden_channels=128, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.0, 'jk': 'lstm'})
+    train(model, data_train, data_val, data_test, task=task, num_epochs=1000, patience=1000, lr=0.01, weight_decay=0.05, reduce_fac=0.5)

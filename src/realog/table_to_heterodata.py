@@ -12,7 +12,7 @@ from realog.utils.utils import CustomHyperTransformer
 
 DATA_DIR = "./data"
 
-def csv_to_hetero_splits(database_name, target_table, target_column, task='regression'):
+def csv_to_hetero_splits(database_name, target_table, target_column, task='regression', add_skip_connections=False):
     metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
 
     tables = load_tables(Path(f'{DATA_DIR}/{database_name}'), metadata)
@@ -28,14 +28,14 @@ def csv_to_hetero_splits(database_name, target_table, target_column, task='regre
             categories[table][column] = tables[table][column].unique()
             
 
-    data_train, ht_dict, _ = csv_to_hetero(database_name, target_table, target_column, split='train', categories=categories, task=task)
-    data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict, categories=categories, task=task)
-    data_test = csv_to_hetero(database_name, target_table, target_column, split='test', ht_dict=ht_dict, categories=categories, task=task)
+    data_train, ht_dict, _ = csv_to_hetero(database_name, target_table, target_column, split='train', categories=categories, task=task, add_skip_connections=add_skip_connections)
+    data_val = csv_to_hetero(database_name, target_table, target_column, split='val', ht_dict=ht_dict, categories=categories, task=task, add_skip_connections=add_skip_connections)
+    data_test = csv_to_hetero(database_name, target_table, target_column, split='test', ht_dict=ht_dict, categories=categories, task=task, add_skip_connections=add_skip_connections)
 
     return data_train, data_val, data_test
 
 
-def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None, categories={}, task='regression'):
+def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dict=None, categories={}, task='regression', add_skip_connections=False):
 
     data_path = Path(f'{DATA_DIR}/{database_name}')
 
@@ -48,10 +48,10 @@ def csv_to_hetero(database_name, target_table, target_column, split=None, ht_dic
     tables, metadata = remove_sdv_columns(tables, metadata)
     tables, metadata = make_column_names_unique(tables, metadata)
 
-    return tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories=categories, task='regression', split=split)
+    return tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=ht_dict, categories=categories, task=task, split=split, add_skip_connections=add_skip_connections)
 
 
-def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories={}, task='regression', split=None):
+def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=None, categories={}, task='regression', split=None, add_skip_connections=False):
     if task == 'regression':
         y = tables[target_table].pop(f'{target_table}_{target_column}')
     elif task == 'classification':
@@ -177,6 +177,26 @@ def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=
         std = data[key].x.std(dim=0)
         std[std == 0] = 1
         data[key].x = ((data[key].x - data[key].x.mean(dim=0)) / std)
+
+    # TODO: if add_skip_connections:...
+    # create connected components
+    from torch_geometric.data import Batch
+    from realog.samplers import get_connected_components
+    if add_skip_connections:
+        ccs = get_connected_components(data)
+        for cc in ccs:
+            # add skip-connections from all tables (except the target_table) to the artificial target node
+            for key in metadata.get_tables():
+                # exclude the target and empty tables (foreign keys only)
+                if key == target_table or (data[key].x.size(1) == 1 and data[key].x.sum().item() == 0):
+                    continue
+                # connect only towards target
+                pks = torch.arange(cc[key].x.size(0))
+                if cc['target'].x.size(0) > 1:
+                    raise ValueError("Self connections not applicable for target table with multiple rows")
+                target_keys = torch.zeros_like(pks)
+                cc[key, 'to', 'target'].edge_index = torch.stack([pks, target_keys], dim=0)
+        data = Batch.from_data_list(ccs)
 
     transform = T.Compose([
         T.AddSelfLoops(),
