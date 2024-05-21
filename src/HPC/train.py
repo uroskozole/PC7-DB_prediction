@@ -7,6 +7,8 @@ from torch_geometric.datasets import OGB_MAG
 import torch_geometric.transforms as T
 import torch
 import numpy as np
+import argparse
+
 
 from datetime import datetime
 
@@ -97,7 +99,7 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
             test_loss = F.mse_loss(test_out['target'], data_test['target'].y)
             print(f'Test Loss: {np.sqrt(test_loss.item()):.4f}')
             writer.add_scalar('Loss/test', np.sqrt(test_loss.item()), epoch)
-
+        
         outs = test_out['target'].detach().cpu().numpy()
         targets = data_test['target'].y.cpu().numpy()
         losses = []
@@ -108,7 +110,6 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
             boot_loss = np.sqrt(F.mse_loss(torch.tensor(boot_outs), torch.tensor(boot_targets)).item())
             losses.append(boot_loss)
         print(f'Bootstrapped Test Loss: {np.mean(losses):.4f} +/- {np.std(losses)/10:.4f}')
-        # scheduler.step()
 
     import matplotlib.pyplot as plt
     preds = test_out['target'].detach().cpu().numpy()
@@ -121,15 +122,20 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
 
 
 if __name__ == '__main__':
-    # dataset = 'Biodegradability_v1'
-    # target_table = 'molecule'
-    # target = 'activity'
-    task = 'regression'
-    dataset = "rossmann_subsampled"
-    target_table = "historical"
-    target = "Customers"
-    data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers')
-    # data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task)
+    args = argparse.ArgumentParser()
+    args.add_argument("--dataset", type=str, default="rossmann")
+    args.add_argument("--target_table", type=str, default="historical")
+    args.add_argument("--target", type=str, default="Customers")
+    args.add_argument("--task", type=str, default="regression")
+    args.add_argument("--model_name", type=str, default="GIN")
+    args = args.parse_args()
+    dataset = args.dataset
+    target_table = args.target_table
+    target = args.target
+    task = args.task
+    model_name = args.model_name
+
+    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task)
     
     
     # sanity check that feature dimensions match
@@ -140,7 +146,9 @@ if __name__ == '__main__':
         out_channels = data_train['target'].num_classes
     elif task == 'regression':
         out_channels = 1
-    model_name = 'GIN'
+        
     print(f'Training {model_name} model, dataset: {dataset}, target: {target}, task: {task}')
-    model = build_hetero_gnn(model_name, data_train, aggr='sum', types=list(data_train.x_dict.keys()), hidden_channels=128, num_layers=2, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.0, 'jk':'cat'})
-    train(model, data_train, data_val, data_test, task=task, num_epochs=1, patience=1000, lr=0.01, weight_decay=0.05, reduce_fac=0.5)
+
+    num_layers = len(data_train.x_dict.keys())-1
+    model = build_hetero_gnn(model_name, data_train, aggr='sum', types=list(data_train.x_dict.keys()), hidden_channels=256, num_layers=num_layers, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.1, 'jk':'lstm'})
+    train(model, data_train, data_val, data_test, task=task, num_epochs=2000, patience=1000, lr=0.001, weight_decay=0.05, reduce_fac=0.5)
