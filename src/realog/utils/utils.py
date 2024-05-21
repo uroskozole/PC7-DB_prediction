@@ -39,7 +39,8 @@ class CustomHyperTransformer(HyperTransformer):
 
             if kind == 'i' or kind == 'f':
                 # Numerical column.
-                self.column_transforms[field] = {'mean': data[field].mean()}
+                self.column_transforms[field] = {'mean': data[field].mean(), 
+                                                 'std': data[field].std()}
             elif kind == 'b':
                 # Boolean column.
                 numeric = pd.to_numeric(data[field], errors='coerce').astype(float)
@@ -47,7 +48,7 @@ class CustomHyperTransformer(HyperTransformer):
             elif kind == 'O':
                 # Categorical column.
                 col_data = pd.DataFrame({'field': data[field]})
-                enc = OneHotEncoder(handle_unknown='ignore')
+                enc = OneHotEncoder(handle_unknown='ignore', categories=[(list(col_data['field'].cat.categories))])
                 enc.fit(col_data)
                 self.column_transforms[field] = {'one_hot_encoder': enc}
             elif kind == 'M':
@@ -86,6 +87,7 @@ class CustomHyperTransformer(HyperTransformer):
             if kind == 'i' or kind == 'f':
                 # Numerical column.
                 data[field] = data[field].fillna(transform_info['mean'])
+                data[field] = (data[field] - transform_info['mean']) / transform_info['std']
             elif kind == 'b':
                 # Boolean column.
                 data[field] = pd.to_numeric(data[field], errors='coerce').astype(float)
