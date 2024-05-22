@@ -157,7 +157,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='financial_v1', choices=['rossmann', 'financial_v1'])
-    parser.add_argument('--model', type=str, default='GAT', choices=['GAT, EdgeCNN, GCN, GraphSAGE, GIN', 'GATv2'])
+    parser.add_argument('--model', type=str, default='GAT', choices=['GAT', 'EdgeCNN', 'GraphSAGE', 'GIN', 'GATv2'])
     parser.add_argument('--oversample', action='store_true')
     args = parser.parse_args()
 
