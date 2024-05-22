@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name="EdgeCNN"
-#SBATCH --output=sling_logs/EdgeCNN-%J.out
-#SBATCH --error=sling_logs/EdgeCNN-%J.err
+#SBATCH --output=sling_logs/EdgeCNN-rossmann-%J.out
+#SBATCH --error=sling_logs/EdgeCNN-rossmann-%J.err
 #SBATCH --time=08:00:00 # job time limit - full format is D-H:M:S
 #SBATCH --nodes=1 # number of nodes
 #SBATCH --gres=gpu:1 # number of gpus

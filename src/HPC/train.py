@@ -111,13 +111,13 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
             losses.append(boot_loss)
         print(f'Bootstrapped Test Loss: {np.mean(losses):.4f} +/- {np.std(losses)/10:.4f}')
 
-    import matplotlib.pyplot as plt
-    preds = test_out['target'].detach().cpu().numpy()
-    target = data_test['target'].y.cpu().numpy()
-    # plot x=y line
-    plt.plot([0, target.max()], [0, target.max()], 'k--')
-    plt.scatter(target, preds)
-    plt.show()
+    # import matplotlib.pyplot as plt
+    # preds = test_out['target'].detach().cpu().numpy()
+    # target = data_test['target'].y.cpu().numpy()
+    # # plot x=y line
+    # plt.plot([0, target.max()], [0, target.max()], 'k--')
+    # plt.scatter(target, preds)
+    # plt.show()
     return model
 
 
@@ -135,7 +135,9 @@ if __name__ == '__main__':
     task = args.task
     model_name = args.model_name
 
-    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task)
+    print(f'Starting {model_name} model, dataset: {dataset}, target: {target}, task: {task}')
+
+    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task, add_skip_connections = True if dataset == "Biodegradability_v1" else False)
     
     
     # sanity check that feature dimensions match
@@ -147,7 +149,6 @@ if __name__ == '__main__':
     elif task == 'regression':
         out_channels = 1
         
-    print(f'Training {model_name} model, dataset: {dataset}, target: {target}, task: {task}')
 
     num_layers = len(data_train.x_dict.keys())-1
     model = build_hetero_gnn(model_name, data_train, aggr='sum', types=list(data_train.x_dict.keys()), hidden_channels=256, num_layers=num_layers, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.1, 'jk':'lstm'})

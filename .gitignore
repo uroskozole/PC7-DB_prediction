@@ -1,6 +1,7 @@
 ## Project directories:
 data/
 logs/
+src/HPC/sling_logs/
 
 src/sandbox.ipynb
 src/uros.py

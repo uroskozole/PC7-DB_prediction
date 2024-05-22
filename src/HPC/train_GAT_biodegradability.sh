@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name="GAT"
-#SBATCH --output=sling_logs/GAT-%J.out
-#SBATCH --error=sling_logs/GAT-%J.err
+#SBATCH --output=sling_logs/GAT-Biodegradability_v1-%J.out
+#SBATCH --error=sling_logs/GAT-Biodegradability_v1-%J.err
 #SBATCH --time=08:00:00 # job time limit - full format is D-H:M:S
 #SBATCH --nodes=1 # number of nodes
 #SBATCH --gres=gpu:1 # number of gpus
