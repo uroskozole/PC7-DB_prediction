@@ -74,7 +74,7 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
     target_primary_key = metadata.tables[target_table_name].primary_key
 
     if task == 'regression':
-        y = target_table[target_table[target_primary_key] == target_pk][target_column]
+        y = target_table.loc[target_table[target_primary_key] == target_pk, target_column].values[0]
         target_table.loc[target_table[target_primary_key] == target_pk, target_column] = means[target_table_name][target_column]
     elif task == 'classification':
         y = target_table.loc[target_table[target_primary_key] == target_pk, target_column].values[0]
@@ -200,7 +200,7 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
         # subtract 1 because the target column has an additional 'target' category
         data['target'].num_classes = len(categories[target_table_name][target_column]) - 1
     elif task == 'regression':
-        data['target'].y = torch.tensor(y.values.reshape(-1, 1).astype('float'), dtype=torch.float32)
+        data['target'].y = torch.tensor(y.reshape(-1, 1).astype('float'), dtype=torch.float32)
 
 
     # add skip-connections from all tables (except the target_table) to the artificial target node
@@ -217,6 +217,7 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
 
     transform = T.Compose([
         T.AddSelfLoops(),
+        T.RemoveDuplicatedEdges(),
         T.RemoveIsolatedNodes(),
     ])
 

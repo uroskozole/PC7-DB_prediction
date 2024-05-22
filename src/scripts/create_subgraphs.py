@@ -16,9 +16,17 @@ if __name__ == '__main__':
     target_table = 'loan'
     target_column = 'loan_status'
     train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1998-01-01'))
-    val_range = (pd.to_datetime('1998-01-01'), pd.to_datetime('1998-06-01'))
-    test_range = (pd.to_datetime('1998-06-01'), pd.to_datetime('1999-01-01'))
+    val_range   = (pd.to_datetime('1998-01-01'), pd.to_datetime('1998-06-01'))
+    test_range  = (pd.to_datetime('1998-06-01'), pd.to_datetime('1999-01-01'))
     task = 'classification'
+
+    # database_name = 'rossmann'
+    # target_table = 'historical'
+    # target_column = 'historical_Customers'
+    # task = 'regression'
+    # train_range = (pd.to_datetime('2014-01-01'), pd.to_datetime('2014-03-01'))
+    # val_range   = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
+    # test_range  = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
 
 
     metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
