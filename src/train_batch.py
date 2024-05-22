@@ -21,9 +21,9 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
 
     model.train()
     # from samplers import get_connected_components
-    trainloader = DataLoader(data_train, batch_size=128, shuffle=True, generator=torch.Generator(device=device), drop_last=True)
-    valloader = DataLoader(data_val, batch_size=128, shuffle=False, drop_last=False)
-    testloader = DataLoader(data_test, batch_size=128, shuffle=False, drop_last=False)
+    trainloader = DataLoader(data_train, batch_size=64, shuffle=True, generator=torch.Generator(device=device), drop_last=True)
+    valloader = DataLoader(data_val, batch_size=64, shuffle=False, drop_last=False)
+    testloader = DataLoader(data_test, batch_size=64, shuffle=False, drop_last=False)
     
     total_steps = len(trainloader) * num_epochs
     scheduler = optim.lr_scheduler.OneCycleLR(optimizer, max_lr=lr * 10, total_steps=total_steps, pct_start=0.3, anneal_strategy='cos', three_phase=False)
@@ -81,13 +81,16 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
                     pred += preds
                     gt   += targets
                 pbar.set_postfix({'val_loss': np.mean(val_loss), 'val_acc': val_correct / val_total})
-        val_f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
-        val_p  = precision_score(gt, pred, average='binary', pos_label=1, zero_division=0)
-        val_r  = recall_score(gt, pred, average='binary', pos_label=1, zero_division=0)
-            
+       
         if task == 'classification':
+            val_f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+            val_p  = precision_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+            val_r  = recall_score(gt, pred, average='binary', pos_label=1, zero_division=0)
             if val_f1 > best_val_f1:
                 best_val_f1 = val_f1
+                best_loss = np.mean(val_loss)
+                best_model = model.state_dict()
+            elif val_f1 == best_val_f1 and np.mean(val_loss) < best_loss:
                 best_loss = np.mean(val_loss)
                 best_model = model.state_dict()
         elif task == 'regression':
@@ -110,6 +113,8 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         test_loss = []
         test_correct = 0
         test_total = 0
+        pred = []
+        gt   = []
         for batch in pbar:
             batch = batch.to(device)
             out = model(batch.x_dict, batch.edge_index_dict)
@@ -118,27 +123,20 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             if task == 'classification':
                 preds = out['target'].argmax(dim=-1).cpu().numpy()
                 targets = batch['target'].y.cpu().numpy()
+                pred += preds.tolist()
+                gt   += targets.tolist()
                 correct = (targets == preds).sum().item()
                 total = batch['target'].y.shape[0]
                 test_correct += correct
                 test_total += total
-                # print(f'TEST : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}') 
-                # compute recall and precision for class 1
-                pos_mask = batch['target'].y == 1
-                pos_pred_mask = out['target'].argmax(dim=-1) == 1
-                true_pos = (pos_mask & pos_pred_mask).sum().item()
-                false_pos = (~pos_mask & pos_pred_mask).sum().item()
-                false_neg = (pos_mask & ~pos_pred_mask).sum().item()
-
-                precision = true_pos / (true_pos + false_pos) if true_pos + false_pos > 0 else np.nan
-                recall = true_pos / (true_pos + false_neg) if true_pos + false_neg > 0 else np.nan
                 
-                preds = out['target'].argmax(dim=-1).cpu().numpy()
-                targets = batch['target'].y.cpu().numpy()
-                
-                print('F1 Score: ', f1_score(targets, preds, average='binary', pos_label=1, zero_division=0))
-                print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
-                print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
+    if task == 'classification':
+        val_f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        val_p  = precision_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        val_r  = recall_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        print('F1 Score: ', f1_score(targets, preds, average='binary', pos_label=1, zero_division=0))
+        print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
+    print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
             
 
     print(f'Best Val Loss: {best_loss:.4f} | Test Loss: {np.mean(test_loss):.4f} | Test Acc: {test_correct / test_total:.4f}')
@@ -193,10 +191,11 @@ if __name__ == '__main__':
                 oversampled_train_data.append(train_data[i])
     
     # TODO: Do we want to oversample the minority class and also weight the loss?
-    train_data += oversampled_train_data
-    weights = 1 / weights
+    # train_data += oversampled_train_data
+    if task == 'classification':
+        weights = 1 / weights
     node_types = metadata.get_tables() + ['target']
 
     
-    model = build_hetero_gnn('GraphSAGE', train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=4, out_channels=out_channels, mlp_layers=3, model_kwargs={'dropout': 0.1, 'jk':'lstm'})
-    train(model, train_data, val_data, test_data, task=task, num_epochs=2000, lr=0.0001, weight_decay=0.1, class_weights=weights)
+    model = build_hetero_gnn('GraphSAGE', train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.2, 'jk':'max'})
+    train(model, train_data, val_data, test_data, task=task, num_epochs=500, lr=0.00001, weight_decay=0.1, class_weights=weights)
