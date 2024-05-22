@@ -1,10 +1,12 @@
+import pickle
+
 from tqdm import tqdm
 from torch import optim
 import torch.nn.functional as F
 from torch_geometric.loader import DataLoader
 import torch
 import numpy as np
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, precision_score, recall_score
 
 
 from realog.utils.metadata import Metadata
@@ -25,10 +27,10 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
     val_loss = None
     best_loss = np.inf
     # from samplers import get_connected_components
-    trainloader = DataLoader(data_train, batch_size=32, shuffle=False, 
-                            #  generator=torch.Generator(device=device), drop_last=True
+    trainloader = DataLoader(data_train, batch_size=128, shuffle=True,
+                            generator=torch.Generator(device=device), drop_last=True
                             )
-    valloader = DataLoader(data_val, batch_size=32, shuffle=False, 
+    valloader = DataLoader(data_val, batch_size=128, shuffle=False, 
                         #    generator=torch.Generator(device=device), 
                            drop_last=False)
     testloader = DataLoader(data_test, batch_size=128, shuffle=False, 
@@ -82,6 +84,8 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             val_loss = []
             val_correct = 0
             val_total = 0
+            pred = []
+            gt   = []
             for batch in pbar:
                 batch = batch.to(device)
                 out = model(batch.x_dict, batch.edge_index_dict)
@@ -92,17 +96,14 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
                     total = batch['target'].y.size(0)
                     val_correct += correct
                     val_total += total
-                    # print(f'VAL  : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
-                    # compute recall and precision for class 1
-                    # pos_mask = batch['target'].y == 1
-                    # pos_pred_mask = out['target'].argmax(dim=-1) == 1
-                    # true_pos = (pos_mask & pos_pred_mask).sum().item()
-                    # false_pos = (~pos_mask & pos_pred_mask).sum().item()
-                    # false_neg = (pos_mask & ~pos_pred_mask).sum().item()
-                    # precision = true_pos / (true_pos + false_pos) if true_pos + false_pos > 0 else np.nan
-                    # recall = true_pos / (true_pos + false_neg) if true_pos + false_neg > 0 else np.nan
-                    # print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
+                    preds = out['target'].argmax(dim=-1).cpu().numpy().tolist()
+                    targets = batch['target'].y.cpu().numpy().tolist()
+                    pred += preds
+                    gt   += targets
                 pbar.set_postfix({'val_loss': np.mean(val_loss), 'val_acc': val_correct / val_total})
+        val_f1 = f1_score(gt, pred)
+        val_p  = precision_score(gt, pred)
+        val_r  = recall_score(gt, pred)
             
         if np.mean(val_loss) < best_loss:
             best_loss = np.mean(val_loss)
@@ -155,6 +156,10 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
 
                 precision = true_pos / (true_pos + false_pos) if true_pos + false_pos > 0 else np.nan
                 recall = true_pos / (true_pos + false_neg) if true_pos + false_neg > 0 else np.nan
+                
+                preds = out['target'].argmax(dim=-1).cpu().numpy()
+                targets = batch['target'].y.cpu().numpy()
+                
                 print('F1 Score: ', f1_score(targets, preds))
                 print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
                 print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
@@ -178,15 +183,16 @@ if __name__ == '__main__':
     dataset = 'financial_v1'
     task = 'classification'
 
-    import pickle
-    metadata = Metadata().load_from_json(f'data/{dataset}/metadata.json')
-    with open(f'data/{dataset}/train_subgraphs.pkl', 'rb') as f:
+    
+    data_dir = '/d/hpc/projects/FRI/vh0153/PC7-DB_prediction/data'
+    metadata = Metadata().load_from_json(f'{data_dir}/{dataset}/metadata.json')
+    with open(f'{data_dir}/{dataset}/train_subgraphs.pkl', 'rb') as f:
         train_data = pickle.load(f)
 
-    with open(f'data/{dataset}/val_subgraphs.pkl', 'rb') as f:
+    with open(f'{data_dir}/{dataset}/val_subgraphs.pkl', 'rb') as f:
         val_data = pickle.load(f)
 
-    with open(f'data/{dataset}/test_subgraphs.pkl', 'rb') as f:
+    with open(f'{data_dir}/{dataset}/test_subgraphs.pkl', 'rb') as f:
         test_data = pickle.load(f)
 
 
@@ -210,11 +216,9 @@ if __name__ == '__main__':
             if y == 1:
                 oversampled_train_data.append(train_data[i])
     # train_data += oversampled_train_data * 4
-    print(weights)
     weights = 1 / weights
     node_types = metadata.get_tables() + ['target']
 
-    print(len(train_data), len(val_data), len(test_data))
     
-    model = build_hetero_gnn('GIN', train_data[idx], aggr='mean', types=node_types, hidden_channels=128, num_layers=4, out_channels=out_channels, mlp_layers=3, model_kwargs={'dropout': 0.1})
-    train(model, train_data, val_data, test_data, task=task, num_epochs=1, lr=0.0001, weight_decay=0.1, class_weights=weights)
+    model = build_hetero_gnn('GIN', train_data[idx], aggr='sum', types=node_types, hidden_channels=256, num_layers=4, out_channels=out_channels, mlp_layers=3, model_kwargs={'dropout': 0.1, 'jk':'cat'})
+    train(model, train_data, val_data, test_data, task=task, num_epochs=1000, lr=0.0001, weight_decay=0.1, class_weights=weights)
