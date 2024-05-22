@@ -73,7 +73,8 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         best_val_f1 = 0
     elif task == 'regression':
         loss_fn = F.mse_loss
-        best_loss = np.inf
+    
+    best_loss = np.inf
 
     for epoch in range(num_epochs):
         train_loss = []
@@ -146,12 +147,9 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
         print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
 
+    # Evaluate the best model
     model.load_state_dict(best_model)
-
     test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
-    print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
-            
-
     print(f'Best Val Loss: {best_loss:.4f} | Test Loss: {np.mean(test_loss):.4f} | Test Acc: {test_acc:.4f}')
     return model
 
