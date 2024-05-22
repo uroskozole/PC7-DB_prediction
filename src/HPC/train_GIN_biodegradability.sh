@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name="GIN"
-#SBATCH --output=sling_logs/GIN-Biodegradability_v1-%J.out
-#SBATCH --error=sling_logs/GIN-Biodegradability_v1-%J.err
-#SBATCH --time=08:00:00 # job time limit - full format is D-H:M:S
+#SBATCH --output=sling_logs/mean/Biodegradability_v1/GIN-Biodegradability_v1-%J.out
+#SBATCH --error=sling_logs/mean/Biodegradability_v1/GIN-Biodegradability_v1-%J.err
+#SBATCH --time=02:00:00 # job time limit - full format is D-H:M:S
 #SBATCH --nodes=1 # number of nodes
 #SBATCH --gres=gpu:1 # number of gpus
 #SBATCH --ntasks=1 # number of tasks

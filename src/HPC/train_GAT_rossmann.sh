@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name="GAT"
-#SBATCH --output=sling_logs/GAT-rossmann-%J.out
-#SBATCH --error=sling_logs/GAT-rossmann-%J.err
-#SBATCH --time=08:00:00 # job time limit - full format is D-H:M:S
+#SBATCH --output=sling_logs/mean/rossmann/GAT-rossmann-%J.out
+#SBATCH --error=sling_logs/mean/rossmann/GAT-rossmann-%J.err
+#SBATCH --time=02:00:00 # job time limit - full format is D-H:M:S
 #SBATCH --nodes=1 # number of nodes
 #SBATCH --gres=gpu:1 # number of gpus
 #SBATCH --ntasks=1 # number of tasks

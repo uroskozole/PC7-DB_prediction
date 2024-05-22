@@ -128,12 +128,14 @@ if __name__ == '__main__':
     args.add_argument("--target", type=str, default="Customers")
     args.add_argument("--task", type=str, default="regression")
     args.add_argument("--model_name", type=str, default="GIN")
+    args.add_argument("--model_type", type=str, default=False)
     args = args.parse_args()
     dataset = args.dataset
     target_table = args.target_table
     target = args.target
     task = args.task
     model_name = args.model_name
+    model_type = args.model_type
 
     print(f'Starting {model_name} model, dataset: {dataset}, target: {target}, task: {task}')
 
@@ -148,8 +150,14 @@ if __name__ == '__main__':
         out_channels = data_train['target'].num_classes
     elif task == 'regression':
         out_channels = 1
+
+    model_kwargs = {'dropout': 0.1, 'jk':'lstm'}
+
+    if model_type and model_name == 'GAT':
+        model_kwargs['v2'] = model_type
+        print("Added GATv2 setting to model!")
         
 
     num_layers = len(data_train.x_dict.keys())-1
-    model = build_hetero_gnn(model_name, data_train, aggr='sum', types=list(data_train.x_dict.keys()), hidden_channels=256, num_layers=num_layers, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.1, 'jk':'lstm'})
-    train(model, data_train, data_val, data_test, task=task, num_epochs=2000, patience=1000, lr=0.001, weight_decay=0.05, reduce_fac=0.5)
+    model = build_hetero_gnn(model_name, data_train, aggr='mean', types=list(data_train.x_dict.keys()), hidden_channels=256, num_layers=num_layers, out_channels=out_channels, mlp_layers=5, model_kwargs=model_kwargs)
+    train(model, data_train, data_val, data_test, task=task, num_epochs=4000, patience=4000, lr=0.001, weight_decay=0.05, reduce_fac=0.5)
