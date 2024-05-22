@@ -137,7 +137,7 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
             idx = 0
             for primary_key_val in tables[parent_table_name][primary_key].unique():
                 if parent_table_name == target_table_name and primary_key_val == target_pk:
-                    assert idx == 0 # TODO: solve this in a better way
+                    assert idx == 0 # the target node should always be the first node
                 id_map[parent_table_name][primary_key][primary_key_val]  = idx
                 idx += 1 
 

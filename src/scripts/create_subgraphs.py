@@ -9,24 +9,37 @@ from realog.utils.metadata import Metadata
 from realog.utils.data import load_tables, remove_sdv_columns, make_column_names_unique
 from realog.database_to_subgraphs import create_subgraphs
 
+DATA_DIR = "./data"
+
+
+def save_subgraphs(database_name, split, subgraphs, pks, tables, metadata):
+    with open(f'{DATA_DIR}/{database_name}/{split}_subgraphs.pkl', 'wb') as f:
+        pickle.dump(subgraphs, f)
+    for table in pks.keys():
+        primary_key_column = metadata.get_primary_key(table)
+        split_table = tables[table][tables[table][primary_key_column].isin(pks[table])]
+        os.makedirs(f'{DATA_DIR}/{database_name}/split/{split}', exist_ok=True)
+        split_table.to_csv(f'{DATA_DIR}/{database_name}/split/{split}/{table}.csv', index=False)
+
+
 if __name__ == '__main__':
-    DATA_DIR = "./data"
+    
 
-    database_name = 'financial_v1'
-    target_table = 'loan'
-    target_column = 'loan_status'
-    train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1998-01-01'))
-    val_range   = (pd.to_datetime('1998-01-01'), pd.to_datetime('1998-06-01'))
-    test_range  = (pd.to_datetime('1998-06-01'), pd.to_datetime('1999-01-01'))
-    task = 'classification'
+    # database_name = 'financial_v1'
+    # target_table = 'loan'
+    # target_column = 'loan_status'
+    # train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1998-01-01'))
+    # val_range   = (pd.to_datetime('1998-01-01'), pd.to_datetime('1998-06-01'))
+    # test_range  = (pd.to_datetime('1998-06-01'), pd.to_datetime('1999-01-01'))
+    # task = 'classification'
 
-    # database_name = 'rossmann'
-    # target_table = 'historical'
-    # target_column = 'historical_Customers'
-    # task = 'regression'
-    # train_range = (pd.to_datetime('2014-01-01'), pd.to_datetime('2014-03-01'))
-    # val_range   = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
-    # test_range  = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
+    database_name = 'rossmann'
+    target_table = 'historical'
+    target_column = 'historical_Customers'
+    task = 'regression'
+    train_range = (pd.to_datetime('2014-01-01'), pd.to_datetime('2014-03-01'))
+    val_range   = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
+    test_range  = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
 
 
     metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
@@ -80,14 +93,9 @@ if __name__ == '__main__':
         train_index, val_index = train_test_split(train_index, test_size=0.1, random_state=1)
     
     train_subgraphs, train_primary_keys = create_subgraphs(train_index, tables, metadata, target_table, target_column, categories, means, stds, task=task)
+    save_subgraphs(database_name, 'train', train_subgraphs, train_primary_keys, tables, metadata)
     val_subgraphs, val_primary_keys = create_subgraphs(val_index, tables, metadata, target_table, target_column, categories, means, stds, task=task)
+    save_subgraphs(database_name, 'val', val_subgraphs, val_primary_keys, tables, metadata)
     test_subgraphs, test_primary_keys = create_subgraphs(test_index, tables, metadata, target_table, target_column, categories, means, stds, task=task)
+    save_subgraphs(database_name, 'test', test_subgraphs, test_primary_keys, tables, metadata)
 
-    for split, subgraphs, pks in zip(['train', 'val', 'test'], [train_subgraphs, val_subgraphs, test_subgraphs], [train_primary_keys, val_primary_keys, test_primary_keys]):
-        with open(f'{DATA_DIR}/{database_name}/{split}_subgraphs.pkl', 'wb') as f:
-            pickle.dump(subgraphs, f)
-        for table in pks.keys():
-            primary_key_column = metadata.get_primary_key(table)
-            split_table = tables[table][tables[table][primary_key_column].isin(pks[table])]
-            os.makedirs(f'{DATA_DIR}/{database_name}/split/{split}', exist_ok=True)
-            split_table.to_csv(f'{DATA_DIR}/{database_name}/split/{split}/{table}.csv', index=False)
