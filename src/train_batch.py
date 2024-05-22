@@ -145,7 +145,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
         print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
 
-    # model.load_state_dict(best_model)
+    model.load_state_dict(best_model)
 
     test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
     print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
@@ -227,5 +227,5 @@ if __name__ == '__main__':
     node_types = metadata.get_tables() + ['target']
 
     
-    model = build_hetero_gnn('GAT', train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.2, 'jk':'max'})
-    train(model, train_data, val_data, test_data, task=task, num_epochs=500, lr=0.00001, weight_decay=0.1, class_weights=weights)
+    model = build_hetero_gnn('GAT', train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.2, 'jk':'cat'})
+    train(model, train_data, val_data, test_data, task=task, num_epochs=200, lr=0.00001, weight_decay=0.1, class_weights=weights)
