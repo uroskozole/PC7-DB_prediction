@@ -53,18 +53,6 @@ def create_graph_tables(idx, tables, metadata, target_table, use_historical=True
             else:
                 graph_tables[child_table] = child_table_rows
             already_merged_tables.add(child_table)
-
-        # elif relationships[0]['child_table_name'] in already_merged_tables:
-        #     child_fks = graph_tables[child_table][child_fk]
-        #     parent_table_rows = tables[parent_table][tables[parent_table][parent_pk].isin(child_fks)]
-        #     date_columns = metadata.get_column_names(parent_table, sdtype='datetime')
-        #     if len(date_columns) > 0:
-        #         parent_table_rows = parent_table_rows[(parent_table_rows[date_columns] < date).all(axis=1)]
-        #     if parent_table in graph_tables:
-        #         graph_tables[parent_table] = pd.concat([graph_tables[parent_table], parent_table_rows])
-        #     else:
-        #         graph_tables[parent_table] = parent_table_rows
-        #     already_merged_tables.add(parent_table)
         else:
             relationships.append(relationships.pop(0))
             continue
@@ -187,9 +175,8 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
         data[child_table, 'from', parent_table].edge_index = torch.tensor(fks.loc[:, [child_primary_key, foreign_key]].values.T)
 
     # set connection to the target node
-    # TODO: make sure the target node's index is 0
     data[target_table_name, 'to', 'target'].edge_index = torch.tensor([[0], [0]], dtype=torch.long)
-    data['target', 'from', target_table_name].edge_index = torch.tensor([[0], [0]], dtype=torch.long)
+    # data['target', 'from', target_table_name].edge_index = torch.tensor([[0], [0]], dtype=torch.long)
 
     # set the features for each node to the HeteroData object
     for key in metadata.get_tables():
@@ -216,9 +203,21 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
         data['target'].y = torch.tensor(y.values.reshape(-1, 1).astype('float'), dtype=torch.float32)
 
 
+    # add skip-connections from all tables (except the target_table) to the artificial target node
+    for key in metadata.get_tables():
+        # exclude the target and empty tables (foreign keys only)
+        if key == target_table_name or (data[key].x.size(1) == 1 and data[key].x.sum().item() == 0):
+            continue
+        # connect only towards target
+        pks = torch.arange(data[key].x.size(0))
+        if data['target'].x.size(0) > 1:
+            raise ValueError("Self connections not applicable for target table with multiple rows")
+        target_keys = torch.zeros_like(pks)
+        data[key, 'to', 'target'].edge_index = torch.stack([pks, target_keys], dim=0)
+
     transform = T.Compose([
-        # T.AddSelfLoops(),
-        # T.RemoveIsolatedNodes(),
+        T.AddSelfLoops(),
+        T.RemoveIsolatedNodes(),
     ])
 
     return transform(data)
