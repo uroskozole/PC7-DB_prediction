@@ -3,7 +3,9 @@ import pickle
 from tqdm import tqdm
 from torch import optim
 import torch.nn.functional as F
+from torch_geometric.data import HeteroData
 from torch_geometric.loader import DataLoader
+from torch_geometric.transforms import RemoveIsolatedNodes
 import torch
 import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
@@ -14,6 +16,42 @@ from realog.hetero_gnns import build_hetero_gnn
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.set_default_device(device)
+
+def evaluate(model, testloader, loss_fn, task='regression'):
+    # evaluate on test set
+    with torch.no_grad():
+        pbar = tqdm(testloader)
+        test_loss = []
+        test_correct = 0
+        test_total = 0
+        pred = []
+        gt   = []
+        for batch in pbar:
+            batch = batch.to(device)
+            out = model(batch.x_dict, batch.edge_index_dict)
+            loss = loss_fn(out['target'], batch['target'].y)
+            test_loss.append(loss.item())
+            if task == 'classification':
+                preds = out['target'].argmax(dim=-1).cpu().numpy()
+                targets = batch['target'].y.cpu().numpy()
+                pred += preds.tolist()
+                gt   += targets.tolist()
+                correct = (targets == preds).sum().item()
+                total = batch['target'].y.shape[0]
+                test_correct += correct
+                test_total += total
+                
+    if task == 'classification':
+        f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        precision  = precision_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        recall  = recall_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        print('F1 Score: ', f1)
+        print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
+        return test_loss, test_correct / test_total
+    elif task == 'regression':
+        print('Test Loss: ', np.mean(test_loss))
+        return test_loss, None
+
 
 def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, lr=0.01, weight_decay=0.1, class_weights=None):
     model.to(device)
@@ -104,42 +142,16 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         elif task == 'regression':
             print(f'Epoch: {epoch} | Loss: {np.mean(train_loss):.4f} | Val Loss: {np.mean(val_loss):.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
         
+        test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
+        print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
 
-    model.load_state_dict(best_model)
+    # model.load_state_dict(best_model)
 
-    # evaluate on test set
-    with torch.no_grad():
-        pbar = tqdm(testloader)
-        test_loss = []
-        test_correct = 0
-        test_total = 0
-        pred = []
-        gt   = []
-        for batch in pbar:
-            batch = batch.to(device)
-            out = model(batch.x_dict, batch.edge_index_dict)
-            loss = loss_fn(out['target'], batch['target'].y)
-            test_loss.append(loss.item())
-            if task == 'classification':
-                preds = out['target'].argmax(dim=-1).cpu().numpy()
-                targets = batch['target'].y.cpu().numpy()
-                pred += preds.tolist()
-                gt   += targets.tolist()
-                correct = (targets == preds).sum().item()
-                total = batch['target'].y.shape[0]
-                test_correct += correct
-                test_total += total
-                
-    if task == 'classification':
-        val_f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
-        val_p  = precision_score(gt, pred, average='binary', pos_label=1, zero_division=0)
-        val_r  = recall_score(gt, pred, average='binary', pos_label=1, zero_division=0)
-        print('F1 Score: ', f1_score(targets, preds, average='binary', pos_label=1, zero_division=0))
-        print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
-    print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
+    test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
+    print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
             
 
-    print(f'Best Val Loss: {best_loss:.4f} | Test Loss: {np.mean(test_loss):.4f} | Test Acc: {test_correct / test_total:.4f}')
+    print(f'Best Val Loss: {best_loss:.4f} | Test Loss: {np.mean(test_loss):.4f} | Test Acc: {test_acc:.4f}')
     return model
 
 
@@ -178,7 +190,7 @@ if __name__ == '__main__':
         out_channels = 1
         weights = None
 
-
+    oversample=True
     oversampled_train_data = []
     for i in range(len(train_data)):
         # use a subgraph which includes all tables for model initialization
@@ -187,15 +199,33 @@ if __name__ == '__main__':
         if task == 'classification':
             y = train_data[i]['target'].y.item()
             weights[y] += 1
-            if y == 1:
-                oversampled_train_data.append(train_data[i])
+            if y == 1 and oversample:
+                # augment the minority class sample
+                data_dict = train_data[i].to_dict()
+                for table in train_data[i].x_dict.keys():
+                    if table != 'target' and table != 'loan' and train_data[i].x_dict[table].size(0) > 1:
+                        # randomly sample 0.9 of the rows
+                        indices = torch.randperm(train_data[i].x_dict[table].size(0))[:int(0.9 * train_data[i].x_dict[table].size(0))]
+                        for edge_type in train_data[i].edge_index_dict.keys():
+                            if table == edge_type[0]:
+                                mask = torch.isin(train_data[i].edge_index_dict[edge_type][0], indices.cpu())
+                            elif table == edge_type[1]:
+                                mask = torch.isin(train_data[i].edge_index_dict[edge_type][1], indices.cpu())
+                            else:
+                                continue
+                            data_dict[edge_type]['edge_index'] = train_data[i].edge_index_dict[edge_type][:, mask.cpu()]
+                duplicate = RemoveIsolatedNodes()(HeteroData().from_dict(data_dict))
+                oversampled_train_data.append(duplicate)
     
     # TODO: Do we want to oversample the minority class and also weight the loss?
-    # train_data += oversampled_train_data
+    
+    if oversample:
+        train_data += oversampled_train_data
+        weights[1] += len(oversampled_train_data)
     if task == 'classification':
         weights = 1 / weights
     node_types = metadata.get_tables() + ['target']
 
     
-    model = build_hetero_gnn('GraphSAGE', train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.2, 'jk':'max'})
+    model = build_hetero_gnn('GAT', train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.2, 'jk':'max'})
     train(model, train_data, val_data, test_data, task=task, num_epochs=500, lr=0.00001, weight_decay=0.1, class_weights=weights)
