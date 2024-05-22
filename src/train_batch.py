@@ -1,3 +1,4 @@
+import argparse
 import pickle
 
 from tqdm import tqdm
@@ -156,18 +157,19 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
 
 
 if __name__ == '__main__':
-    # dataset = 'Biodegradability_v1'
-    # target_table = 'molecule'
-    # target = 'activity'
-    # task = 'regression'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='financial_v1', choices=['rossmann', 'financial_v1'])
+    parser.add_argument('--model', type=str, default='GAT', choices=['GAT, EdgeCNN, GCN, GraphSAGE, GIN', 'GATv2'])
+    parser.add_argument('--oversample', action='store_true')
+    args = parser.parse_args()
 
-    # dataset = "rossmann"
-    # target_table = "historical"
-    # target = "Customers"
-    # task = 'regression'
-    
-    dataset = 'financial_v1'
-    task = 'classification'
+    model = args.model
+    dataset = args.dataset
+    if dataset == 'rossmann':
+        task = 'regression'
+    elif dataset == 'financial_v1':
+        task = 'classification'
+        oversample = args.oversample
 
     
     data_dir = 'data'#'/d/hpc/projects/FRI/vh0153/PC7-DB_prediction/data'
@@ -190,7 +192,7 @@ if __name__ == '__main__':
         out_channels = 1
         weights = None
 
-    oversample=True
+    
     oversampled_train_data = []
     for i in range(len(train_data)):
         # use a subgraph which includes all tables for model initialization
@@ -218,7 +220,6 @@ if __name__ == '__main__':
                 oversampled_train_data.append(duplicate)
     
     # TODO: Do we want to oversample the minority class and also weight the loss?
-    
     if oversample:
         train_data += oversampled_train_data
         weights[1] += len(oversampled_train_data)
@@ -226,6 +227,10 @@ if __name__ == '__main__':
         weights = 1 / weights
     node_types = metadata.get_tables() + ['target']
 
+    model_kwargs = {'dropout': 0.2, 'jk':'cat'}
+    if model == 'GATv2':
+        model = 'GAT'
+        model_kwargs['v2'] = True
     
-    model = build_hetero_gnn('GAT', train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs={'dropout': 0.2, 'jk':'cat'})
+    model = build_hetero_gnn(model, train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs=model_kwargs)
     train(model, train_data, val_data, test_data, task=task, num_epochs=200, lr=0.00001, weight_decay=0.1, class_weights=weights)
