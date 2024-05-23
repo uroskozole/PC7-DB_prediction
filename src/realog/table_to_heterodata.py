@@ -178,29 +178,36 @@ def tables_to_heterodata(tables, target_table, target_column, metadata, ht_dict=
         std[std == 0] = 1
         data[key].x = ((data[key].x - data[key].x.mean(dim=0)) / std)
 
-    # TODO: if add_skip_connections:...
     # create connected components
     from torch_geometric.data import Batch
     from realog.samplers import get_connected_components
     if add_skip_connections:
         ccs = get_connected_components(data)
-        for cc in ccs:
-            # add skip-connections from all tables (except the target_table) to the artificial target node
-            for key in metadata.get_tables():
-                # exclude the target and empty tables (foreign keys only)
-                if key == target_table or (data[key].x.size(1) == 1 and data[key].x.sum().item() == 0):
-                    continue
-                # connect only towards target
-                pks = torch.arange(cc[key].x.size(0))
-                if cc['target'].x.size(0) > 1:
-                    raise ValueError("Self connections not applicable for target table with multiple rows")
-                target_keys = torch.zeros_like(pks)
-                cc[key, 'to', 'target'].edge_index = torch.stack([pks, target_keys], dim=0)
-        data = Batch.from_data_list(ccs)
+        # special case for rossman dataset TODO: generalize
+        if target_table == 'historical':
+            for cc in ccs:
+                target_keys = torch.arange(cc['target'].x.size(0))
+                pks = torch.zeros_like(target_keys)
+                cc['store', 'to', 'target'].edge_index = torch.stack([pks, target_keys], dim=0)
+        else: 
+            # add skip connection to each individual target
+            for cc in ccs:
+                # add skip-connections from all tables (except the target_table) to the artificial target node
+                for key in metadata.get_tables():
+                    # exclude the target and empty tables (foreign keys only)
+                    if key == target_table or (data[key].x.size(1) == 1 and data[key].x.sum().item() == 0):
+                        continue
+                    # connect only towards target
+                    pks = torch.arange(cc[key].x.size(0))
+                    if cc['target'].x.size(0) > 1:
+                        raise ValueError("Self connections not applicable for target table with multiple rows")
+                    target_keys = torch.zeros_like(pks)
+                    cc[key, 'to', 'target'].edge_index = torch.stack([pks, target_keys], dim=0)
+            data = Batch.from_data_list(ccs)
 
     transform = T.Compose([
         T.AddSelfLoops(),
-        # T.RemoveIsolatedNodes(),
+        T.RemoveIsolatedNodes(),
     ])
 
     if split == "train":
