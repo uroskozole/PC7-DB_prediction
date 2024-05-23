@@ -56,7 +56,6 @@ if __name__ == '__main__':
         tables['loan']['loan_status'] = pd.Categorical(tables['loan']['loan_status'], categories=['A', 'B'])
 
     categories = dict()
-    # TODO: !!URGENT
     # TODO: for std and means we should probably only use the training data (should split the target table pks before)
     means = dict()
     stds = dict()

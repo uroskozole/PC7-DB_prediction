@@ -104,15 +104,15 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
             temp_table[numerical_column] = temp_table[numerical_column].astype('float64').fillna(mean)
             temp_table[numerical_column] = (temp_table[numerical_column] - mean) / stds[key][numerical_column]
 
-        # TODO: handle standardization of datetime columns
         datetime_columns = metadata.get_column_names(key, sdtype='datetime')
         for column in datetime_columns:
             nulls = temp_table[column].isnull()
             temp_table[column] = pd.to_datetime(temp_table[column], errors='coerce')
-            temp_table[f'{column}_Year'] = temp_table[column].dt.year / 2000
+            # Do not use the year as we train on different years
+            # temp_table[f'{column}_Year'] = temp_table[column].dt.year / 2000
             temp_table[f'{column}_Month'] = temp_table[column].dt.month / 12
             temp_table[f'{column}_Day'] = temp_table[column].dt.day    / 31
-            temp_table.loc[nulls, f'{column}_Year'] = 0
+            # temp_table.loc[nulls, f'{column}_Year'] = 0
             temp_table.loc[nulls, f'{column}_Month'] = 0
             temp_table.loc[nulls, f'{column}_Day'] = 0
             # TODO: do hours, seconds etc.
