@@ -20,6 +20,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.set_default_device(device)
 
 def evaluate(model, testloader, loss_fn, task='regression'):
+    model.eval()
     # evaluate on test set
     with torch.no_grad():
         pbar = tqdm(testloader)
@@ -55,15 +56,15 @@ def evaluate(model, testloader, loss_fn, task='regression'):
         return test_loss, None
 
 
-def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, lr=0.01, weight_decay=0.1, class_weights=None):
+def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, lr=0.01, weight_decay=0.1, batch_size=64, class_weights=None):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
     model.train()
     # from samplers import get_connected_components
-    trainloader = DataLoader(data_train, batch_size=64, shuffle=True, generator=torch.Generator(device=device), drop_last=True)
-    valloader = DataLoader(data_val, batch_size=64, shuffle=False, drop_last=False)
-    testloader = DataLoader(data_test, batch_size=64, shuffle=False, drop_last=False)
+    trainloader = DataLoader(data_train, batch_size=batch_size, shuffle=True, generator=torch.Generator(device=device), drop_last=True)
+    valloader = DataLoader(data_val, batch_size=batch_size, shuffle=False, drop_last=False)
+    testloader = DataLoader(data_test, batch_size=batch_size, shuffle=False, drop_last=False)
     
     total_steps = len(trainloader) * num_epochs
     scheduler = optim.lr_scheduler.OneCycleLR(optimizer, max_lr=lr * 10, total_steps=total_steps, pct_start=0.3, anneal_strategy='cos', three_phase=False)
@@ -159,11 +160,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='financial_v1', choices=['rossmann', 'financial_v1'])
     parser.add_argument('--model', type=str, default='GAT', choices=['GAT', 'EdgeCNN', 'GraphSAGE', 'GIN', 'GATv2'])
+    parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--oversample', action='store_true')
     args = parser.parse_args()
 
     model = args.model
     dataset = args.dataset
+    batch_size = args.batch_size
     if dataset == 'rossmann':
         task = 'regression'
     elif dataset == 'financial_v1':
@@ -220,6 +223,7 @@ if __name__ == '__main__':
     
     # TODO: Do we want to oversample the minority class and also weight the loss?
     if oversample:
+        print('Oversampling')
         train_data += oversampled_train_data
         weights[1] += len(oversampled_train_data)
     if task == 'classification':
@@ -232,4 +236,4 @@ if __name__ == '__main__':
         model_kwargs['v2'] = True
     
     model = build_hetero_gnn(model, train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs=model_kwargs)
-    train(model, train_data, val_data, test_data, task=task, num_epochs=200, lr=0.00001, weight_decay=0.1, class_weights=weights)
+    train(model, train_data, val_data, test_data, task=task, num_epochs=200, lr=0.00001, weight_decay=0.1, class_weights=weights, batch_size=batch_size)
