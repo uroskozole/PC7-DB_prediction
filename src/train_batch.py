@@ -1,3 +1,4 @@
+from copy import deepcopy
 import argparse
 import pickle
 
@@ -129,14 +130,14 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             if val_f1 > best_val_f1:
                 best_val_f1 = val_f1
                 best_loss = np.mean(val_loss)
-                best_model = model.state_dict()
+                best_model = deepcopy(model.state_dict())
             elif val_f1 == best_val_f1 and np.mean(val_loss) < best_loss:
                 best_loss = np.mean(val_loss)
-                best_model = model.state_dict()
+                best_model = deepcopy(model.state_dict())
         elif task == 'regression':
             if np.mean(val_loss) < best_loss:
                 best_loss = np.mean(val_loss)
-                best_model = model.state_dict()
+                best_model = deepcopy(model.state_dict())
 
         
         if task == 'classification': 
