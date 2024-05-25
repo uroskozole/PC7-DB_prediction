@@ -53,7 +53,7 @@ def evaluate(model, testloader, loss_fn, task='regression'):
         return test_loss, test_correct / test_total
     elif task == 'regression':
         print('Test Loss: ', np.mean(test_loss))
-        return test_loss, None
+        return test_loss, np.sqrt(test_loss).mean()
 
 
 def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, lr=0.01, weight_decay=0.1, batch_size=64, class_weights=None):
@@ -122,7 +122,9 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
                     targets = batch['target'].y.cpu().numpy().tolist()
                     pred += preds
                     gt   += targets
-                pbar.set_postfix({'val_loss': np.mean(val_loss), 'val_acc': val_correct / val_total})
+                    pbar.set_postfix({'val_loss': np.mean(val_loss), 'val_acc': val_correct / val_total})
+                elif task == 'regression':
+                    pbar.set_postfix({'val_loss': np.sqrt(np.mean(val_loss))})
        
         if task == 'classification':
             val_f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
@@ -144,7 +146,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         if task == 'classification': 
             print(f'Epoch: {epoch} | Loss: {np.mean(train_loss):.4f} | Val Loss: {np.mean(val_loss):.4f} | Val Acc: {val_correct / val_total:.4f} | F1: {val_f1:.4f} | Precision: {val_p:.4f} | Recall: {val_r:.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
         elif task == 'regression':
-            print(f'Epoch: {epoch} | Loss: {np.mean(train_loss):.4f} | Val Loss: {np.mean(val_loss):.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
+            print(f'Epoch: {epoch} | Loss: {np.sqrt(np.mean(train_loss)):.4f} | Val Loss: {np.sqrt(np.mean(val_loss)):.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
         
         test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
         print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
@@ -222,18 +224,19 @@ if __name__ == '__main__':
                 oversampled_train_data.append(duplicate)
     
     # TODO: Do we want to oversample the minority class and also weight the loss?
-    if oversample:
-        print('Oversampling')
-        train_data += oversampled_train_data
-        weights[1] += len(oversampled_train_data)
+    
     if task == 'classification':
+        if oversample:
+            print('Oversampling')
+            train_data += oversampled_train_data
+            weights[1] += len(oversampled_train_data)
         weights = 1 / weights
     node_types = metadata.get_tables() + ['target']
 
-    model_kwargs = {'dropout': 0.2, 'jk':'cat'}
+    model_kwargs = {'dropout': 0.1, 'jk':'cat'}
     if model == 'GATv2':
         model = 'GAT'
         model_kwargs['v2'] = True
     
-    model = build_hetero_gnn(model, train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=5, out_channels=out_channels, mlp_layers=5, model_kwargs=model_kwargs)
-    train(model, train_data, val_data, test_data, task=task, num_epochs=200, lr=0.00001, weight_decay=0.1, class_weights=weights, batch_size=batch_size)
+    model = build_hetero_gnn(model, train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=2, out_channels=out_channels, mlp_layers=5, model_kwargs=model_kwargs)
+    train(model, train_data, val_data, test_data, task=task, num_epochs=1000, lr=0.00001, weight_decay=0.1, class_weights=weights, batch_size=batch_size)
