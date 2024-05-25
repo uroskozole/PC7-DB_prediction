@@ -37,7 +37,7 @@ if __name__ == '__main__':
     target_table = 'historical'
     target_column = 'historical_Customers'
     task = 'regression'
-    train_range = (pd.to_datetime('2014-01-01'), pd.to_datetime('2014-03-01'))
+    train_range = (pd.to_datetime('2014-01-01'), pd.to_datetime('2015-01-01'))
     val_range   = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
     test_range  = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
 
