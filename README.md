@@ -2,6 +2,7 @@
 <p align="center">
   <img src="images/model_preview.png" style="width:250px;"/>
 </p>
+
 ## INSTALLATION
 
 ```bash
