@@ -176,7 +176,7 @@ if __name__ == '__main__':
         oversample = args.oversample
 
     
-    data_dir = 'data'#'/d/hpc/projects/FRI/vh0153/PC7-DB_prediction/data'
+    data_dir = 'data'
     metadata = Metadata().load_from_json(f'{data_dir}/{dataset}/metadata.json')
     with open(f'{data_dir}/{dataset}/train_subgraphs.pkl', 'rb') as f:
         train_data = pickle.load(f)
