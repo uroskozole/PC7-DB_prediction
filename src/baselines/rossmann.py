@@ -9,8 +9,6 @@ from sklearn.metrics import mean_squared_error
 from sklearn.linear_model import LinearRegression
 import argparse
 
-# from utils.metadata import Metadata
-# from utils.data import load_tables, remove_sdv_columns
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--linear", action="store_true", help="Use linear regression model instead of XGBoost")
@@ -43,7 +41,6 @@ df_historical_train["StateHoliday"] = pd.Categorical(df_historical_train['StateH
 df_historical_test["StateHoliday"] = pd.Categorical(df_historical_test['StateHoliday'], categories=['0', 'a'], ordered=True).codes
 
 df_test = df_store_test.merge(df_historical_test, on="Store", how="right").drop(["Store"], axis=1)
-# df = df.fillna(df.mean())
 
 categorical_cols = ['Promo2',
                     'CompetitionOpenSinceYear', 
@@ -59,7 +56,7 @@ numerical_cols = ['CompetitionOpenSinceYear',
                    'DayOfWeek',
                    'Promo',
                    'Open',
-                   'SchoolHoliday']# + ['Customers']   # List of numerical column names
+                   'SchoolHoliday']
 
 id_cols = ['Id']
 drop_cols = ["Date"] + id_cols
@@ -82,7 +79,7 @@ preprocessor = ColumnTransformer(
 pipeline = Pipeline(steps=[('preprocessor', preprocessor)])
 
 # Apply the transformations to the DataFrame
-transformed_df_ = pipeline.fit_transform(df)#.toarray()
+transformed_df_ = pipeline.fit_transform(df)
 transformed_df = pd.DataFrame(transformed_df_, columns=numerical_cols + list(pipeline.named_steps['preprocessor'].named_transformers_['cat'].get_feature_names_out()))
 
 if args.linear:

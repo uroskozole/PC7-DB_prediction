@@ -19,22 +19,25 @@ target_column = "activity"
 
 argparser = argparse.ArgumentParser()
 argparser.add_argument("--bootstrap", action="store_true", help="Use the bootstrap dataset")
+argparser.add_argument("--model", required=True, help="Model to use for obtaining baseline")
 args = argparser.parse_args()
 
-# data/Biodegradability_v1/metadata.json
+if args.model == "xgb":
+    model = XGBRegressor()
+elif args.model == "linear":
+    model = LinearRegression()
+else:
+    raise ValueError("Model not supported! Available models: 'xgb', 'linear'")
 
 metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
 tables_train = load_tables(f'{DATA_DIR}/{database_name}/split/train', metadata)
 tables_test = load_tables(f'{DATA_DIR}/{database_name}/split/test', metadata)
 tables_train, metadata_train = remove_sdv_columns(tables_train, metadata)
 tables_test, metadata_test = remove_sdv_columns(tables_test, metadata)
-# y = tables[target_table].pop(target_column)
 
 denormalized_table_train = denormalize_tables(tables_train, metadata_train)
 denormalized_table_test = denormalize_tables(tables_test, metadata_test)
-# rename column type_bond
-# denormalized_table = denormalized_table.rename(columns={9: "type_bond_1", 10: "type_bond_2"}, errors="raise")
-# rename duplicately-named columns
+
 df_train = denormalized_table_train["type_bond"]
 first_train = df_train.iloc[:, 0]
 second_train = df_train.iloc[:, 0]
@@ -42,10 +45,6 @@ second_train = df_train.iloc[:, 0]
 denormalized_table_train["type_bond_1"] = first_train
 denormalized_table_train["type_bond_2"] = second_train
 denormalized_table_train = denormalized_table_train.drop(columns=["type_bond"])
-
-
-# sample denormalized_table
-# denormalized_table = denormalized_table.sample(frac=0.1, axis=0)
 
 y_train = denormalized_table_train[target_column]
 denormalized_table_train = denormalized_table_train.drop(columns=[target_column])
@@ -57,10 +56,6 @@ second_test = df_test.iloc[:, 0]
 denormalized_table_test["type_bond_1"] = first_test
 denormalized_table_test["type_bond_2"] = second_test
 denormalized_table_test = denormalized_table_test.drop(columns=["type_bond"])
-
-
-# sample denormalized_table
-# denormalized_table = denormalized_table.sample(frac=0.1, axis=0)
 
 y_test = denormalized_table_test[target_column]
 denormalized_table_test = denormalized_table_test.drop(columns=[target_column])
@@ -84,13 +79,10 @@ preprocessor = ColumnTransformer(
 )
 denorm_entire = pd.concat([denormalized_table_train, denormalized_table_test])
 
-# X_train = preprocessor.fit_transform(denormalized_table_train)
 X = preprocessor.fit_transform(denorm_entire)
 idxs = pd.concat([idxs_train, idxs_test]).values.reshape(-1, 1)
 
 
-# model = XGBRegressor()
-model = LinearRegression()
 
 if args.bootstrap:
     y = pd.concat([y_train, y_test])
@@ -106,17 +98,14 @@ if args.bootstrap:
         y_train = y.iloc[split_idxs[:len(denormalized_table_train)]]
         y_test = y.iloc[split_idxs[len(denormalized_table_train):]]
 
-        # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
 
         results = pd.DataFrame(y_pred, columns=["y_pred"])
         results["id_"] = idxs[split_idxs[len(denormalized_table_train):], 0]
         results["truth"] = y_test.values
-        results["square_error"] = (results["y_pred"] - results["truth"]) ** 2# / results.shape[0]
+        results["square_error"] = (results["y_pred"] - results["truth"]) ** 2
 
-        # mse = mean_squared_error(y_test, y_pred)
         mse = results.groupby("id_")["square_error"].mean()
         rmses = np.append(rmses, np.sqrt(mse.mean()))
 
@@ -128,24 +117,13 @@ else:
     X_train = X[:len(denormalized_table_train)]
     X_test = X[len(denormalized_table_train):]
 
-    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
 
     results = pd.DataFrame(y_pred, columns=["y_pred"])
     results["id_"] = idxs_test
     results["truth"] = y_test
-    results["square_error"] = (results["y_pred"] - results["truth"]) ** 2# / results.shape[0]
+    results["square_error"] = (results["y_pred"] - results["truth"]) ** 2
 
-    # mse = mean_squared_error(y_test, y_pred)
     mse = results.groupby("id_")["square_error"].mean()
-    print(f"RMSE on test: {np.sqrt(mse.mean())} +- {np.sqrt(np.std(mse.values)/np.sqrt(mse.shape[0]))}") # ???
-    
-
-# y_pred_ = model.predict(X_train)
-
-# mse_ = mean_squared_error(y_train, y_pred_)
-
-# print("RMSE: ", np.sqrt(mse_))
-
+    print(f"RMSE on test: {np.sqrt(mse.mean())} +- {np.sqrt(np.std(mse.values)/np.sqrt(mse.shape[0]))}")
