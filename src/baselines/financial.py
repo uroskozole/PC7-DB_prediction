@@ -40,7 +40,6 @@ if args.entire_data:
     tables, metadata = remove_sdv_columns(tables, metadata)
 
     X, y = process_financial(tables)
-    # remap classes in y 0 to 1
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=int(args.seed))
 
 else:
@@ -50,8 +49,6 @@ else:
     tables_train = load_tables(f'{DATA_DIR}/{database_name}/split/train', metadata_train)
     tables_test = load_tables(f'{DATA_DIR}/{database_name}/split/test', metadata_train)
     tables_val = load_tables(f'{DATA_DIR}/{database_name}/split/val', metadata_train)
-    # tables_train, metadata_train = remove_sdv_columns(tables_train, metadata_train)
-    # tables_test, metadata_test = remove_sdv_columns(tables_test, metadata_test)
 
     X_train, y_train = process_financial_split(tables_train)
     X_test, y_test = process_financial_split(tables_test)
