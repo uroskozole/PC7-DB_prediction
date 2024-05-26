@@ -5,6 +5,7 @@ src/HPC/sling_logs/
 
 src/sandbox.ipynb
 src/uros.py
+.vscode/
 
 ## Core latex/pdflatex auxiliary files:
 *.aux
@@ -448,3 +449,12 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+final_report/fig/hetero_old.png
+final_report/fig/hetero.png
+final_report/fig/hetero_leskovac.png
+final_report/fig/hetero_layer.png
+final_report/fig/hetero_layer_updated.png
+final_report/fig/hetero_entire.png
+final_report/fig/hetero_entire_updated.png
+src/baselines/results_bio.txt
+src/baselines/results_fin.txt

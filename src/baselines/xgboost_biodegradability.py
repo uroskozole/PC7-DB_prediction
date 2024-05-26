@@ -3,6 +3,10 @@ import numpy as np
 from xgboost import XGBRegressor
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import precision_score, recall_score
+from sklearn.linear_model import LinearRegression
+import argparse
 
 from realog.utils.metadata import Metadata
 from realog.utils.data import load_tables, remove_sdv_columns
@@ -12,6 +16,10 @@ DATA_DIR = "data"
 database_name = "Biodegradability_v1"
 target_table = "molecule"
 target_column = "activity"
+
+argparser = argparse.ArgumentParser()
+argparser.add_argument("--bootstrap", action="store_true", help="Use the bootstrap dataset")
+args = argparser.parse_args()
 
 # data/Biodegradability_v1/metadata.json
 
@@ -78,29 +86,62 @@ denorm_entire = pd.concat([denormalized_table_train, denormalized_table_test])
 
 # X_train = preprocessor.fit_transform(denormalized_table_train)
 X = preprocessor.fit_transform(denorm_entire)
-X_train = X[:len(denormalized_table_train)]
-X_test = X[len(denormalized_table_train):]
+idxs = pd.concat([idxs_train, idxs_test]).values.reshape(-1, 1)
 
-# X_train[id_col] = idxs_train
-# X_test[id_col] = idxs_test
 
-model = XGBRegressor()
+# model = XGBRegressor()
+model = LinearRegression()
 
-# X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+if args.bootstrap:
+    y = pd.concat([y_train, y_test])
+    rmses = np.array([])
 
-model.fit(X_train, y_train)
-y_pred = model.predict(X_test)
+    for i in range(10):
 
-results = pd.DataFrame(y_pred, columns=["y_pred"])
-results["id_"] = idxs_test
-results["truth"] = y_test
-results["square_error"] = (results["y_pred"] - results["truth"]) ** 2# / results.shape[0]
+        split_idxs = np.random.permutation(X.shape[0], )
+        # get a permutation of X elements
+        X_train = X[split_idxs[:len(denormalized_table_train)]]
+        X_test = X[split_idxs[len(denormalized_table_train):]]
 
-# mse = mean_squared_error(y_test, y_pred)
-mse = results.groupby("id_")["square_error"].mean()
-mse = mse.mean()
+        y_train = y.iloc[split_idxs[:len(denormalized_table_train)]]
+        y_test = y.iloc[split_idxs[len(denormalized_table_train):]]
 
-print("RMSE on test: ", np.sqrt(mse))
+        # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
+
+        results = pd.DataFrame(y_pred, columns=["y_pred"])
+        results["id_"] = idxs[split_idxs[len(denormalized_table_train):], 0]
+        results["truth"] = y_test.values
+        results["square_error"] = (results["y_pred"] - results["truth"]) ** 2# / results.shape[0]
+
+        # mse = mean_squared_error(y_test, y_pred)
+        mse = results.groupby("id_")["square_error"].mean()
+        rmses = np.append(rmses, np.sqrt(mse.mean()))
+
+        print(f"interim rmse: {np.sqrt(mse.mean())}")
+    
+    std = np.std(rmses)
+    print(f"RMSE on test: {np.mean(rmses)} +- {std/np.sqrt(rmses.shape[0])}")
+else:
+    X_train = X[:len(denormalized_table_train)]
+    X_test = X[len(denormalized_table_train):]
+
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+
+    results = pd.DataFrame(y_pred, columns=["y_pred"])
+    results["id_"] = idxs_test
+    results["truth"] = y_test
+    results["square_error"] = (results["y_pred"] - results["truth"]) ** 2# / results.shape[0]
+
+    # mse = mean_squared_error(y_test, y_pred)
+    mse = results.groupby("id_")["square_error"].mean()
+    print(f"RMSE on test: {np.sqrt(mse.mean())} +- {np.sqrt(np.std(mse.values)/np.sqrt(mse.shape[0]))}") # ???
+    
 
 # y_pred_ = model.predict(X_train)
 
