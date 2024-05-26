@@ -1,6 +1,8 @@
-# README #
-
-# RelAtional Learning On Graphs (REALOG) PACKAGE INSTALLATION
+# RelAtional Learning On Graphs (REALOG)
+<p align="center">
+  <img src="images/model_preview.png" style="width:250px;"/>
+</p>
+## INSTALLATION
 
 ```bash
 pip install -e .
