@@ -1,7 +1,6 @@
-import numpy as np
-import pandas as pd
-
 from pathlib import Path
+
+import pandas as pd
 
 from realog.utils.metadata import Metadata
 from realog.utils.data import load_tables, remove_sdv_columns

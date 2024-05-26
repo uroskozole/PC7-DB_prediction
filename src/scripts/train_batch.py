@@ -1,17 +1,16 @@
-from copy import deepcopy
-import argparse
 import pickle
+import argparse
+from copy import deepcopy
 
+import numpy as np
 from tqdm import tqdm
+import torch
 from torch import optim
 import torch.nn.functional as F
 from torch_geometric.data import HeteroData
 from torch_geometric.loader import DataLoader
 from torch_geometric.transforms import RemoveIsolatedNodes
-import torch
-import numpy as np
 from sklearn.metrics import f1_score, precision_score, recall_score
-
 
 from realog.utils.metadata import Metadata
 from realog.hetero_gnns import build_hetero_gnn

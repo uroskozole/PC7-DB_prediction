@@ -1,8 +1,8 @@
 import os
-
 from copy import deepcopy
 
 import pandas as pd
+
 from sdv.datasets.demo import get_available_demos, download_demo
 
 
