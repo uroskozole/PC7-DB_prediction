@@ -1,0 +1,10 @@
+sbatch train_GIN_rossmann.sh
+sbatch train_GIN_biodegradability.sh
+sbatch train_GraphSAGE_rossmann.sh
+sbatch train_GraphSAGE_biodegradability.sh
+sbatch train_GAT_rossmann.sh
+sbatch train_GAT_biodegradability.sh
+sbatch train_GATv2_rossmann.sh
+sbatch train_GATv2_biodegradability.sh
+sbatch train_EdgeCNN_rossmann.sh
+sbatch train_EdgeCNN_biodegradability.sh 
