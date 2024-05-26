@@ -1,8 +1,8 @@
 import pandas as pd
 import networkx as nx
 
-from utils.metadata import Metadata
-from utils.data import load_tables, remove_sdv_columns
+from realog.utils.metadata import Metadata
+from realog.utils.data import load_tables, remove_sdv_columns
 
 DATA_DIR = "./data"
 ###########################################################################################
