@@ -5,7 +5,7 @@ import torch_geometric.transforms as T
 from torch_geometric.data import HeteroData
 
 
-def create_graph_tables(idx, tables, metadata, target_table, use_historical=False):
+def create_graph_tables(idx, tables, metadata, target_table, use_historical=True):
     graph_tables = {}
     target_row = tables[target_table].iloc[idx]
     date_columns = metadata.get_column_names(target_table, sdtype='datetime')
@@ -53,18 +53,6 @@ def create_graph_tables(idx, tables, metadata, target_table, use_historical=Fals
             else:
                 graph_tables[child_table] = child_table_rows
             already_merged_tables.add(child_table)
-
-        # elif relationships[0]['child_table_name'] in already_merged_tables:
-        #     child_fks = graph_tables[child_table][child_fk]
-        #     parent_table_rows = tables[parent_table][tables[parent_table][parent_pk].isin(child_fks)]
-        #     date_columns = metadata.get_column_names(parent_table, sdtype='datetime')
-        #     if len(date_columns) > 0:
-        #         parent_table_rows = parent_table_rows[(parent_table_rows[date_columns] < date).all(axis=1)]
-        #     if parent_table in graph_tables:
-        #         graph_tables[parent_table] = pd.concat([graph_tables[parent_table], parent_table_rows])
-        #     else:
-        #         graph_tables[parent_table] = parent_table_rows
-        #     already_merged_tables.add(parent_table)
         else:
             relationships.append(relationships.pop(0))
             continue
@@ -86,7 +74,7 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
     target_primary_key = metadata.tables[target_table_name].primary_key
 
     if task == 'regression':
-        y = target_table[target_table[target_primary_key] == target_pk][target_column]
+        y = target_table.loc[target_table[target_primary_key] == target_pk, target_column].values[0]
         target_table.loc[target_table[target_primary_key] == target_pk, target_column] = means[target_table_name][target_column]
     elif task == 'classification':
         y = target_table.loc[target_table[target_primary_key] == target_pk, target_column].values[0]
@@ -116,15 +104,15 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
             temp_table[numerical_column] = temp_table[numerical_column].astype('float64').fillna(mean)
             temp_table[numerical_column] = (temp_table[numerical_column] - mean) / stds[key][numerical_column]
 
-        # TODO: handle standardization of datetime columns
         datetime_columns = metadata.get_column_names(key, sdtype='datetime')
         for column in datetime_columns:
             nulls = temp_table[column].isnull()
             temp_table[column] = pd.to_datetime(temp_table[column], errors='coerce')
-            temp_table[f'{column}_Year'] = temp_table[column].dt.year / 2000
+            # Do not use the year as we train on different years
+            # temp_table[f'{column}_Year'] = temp_table[column].dt.year / 2000
             temp_table[f'{column}_Month'] = temp_table[column].dt.month / 12
             temp_table[f'{column}_Day'] = temp_table[column].dt.day    / 31
-            temp_table.loc[nulls, f'{column}_Year'] = 0
+            # temp_table.loc[nulls, f'{column}_Year'] = 0
             temp_table.loc[nulls, f'{column}_Month'] = 0
             temp_table.loc[nulls, f'{column}_Day'] = 0
             # TODO: do hours, seconds etc.
@@ -149,7 +137,7 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
             idx = 0
             for primary_key_val in tables[parent_table_name][primary_key].unique():
                 if parent_table_name == target_table_name and primary_key_val == target_pk:
-                    assert idx == 0 # TODO: solve this in a better way
+                    assert idx == 0 # the target node should always be the first node
                 id_map[parent_table_name][primary_key][primary_key_val]  = idx
                 idx += 1 
 
@@ -187,9 +175,8 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
         data[child_table, 'from', parent_table].edge_index = torch.tensor(fks.loc[:, [child_primary_key, foreign_key]].values.T)
 
     # set connection to the target node
-    # TODO: make sure the target node's index is 0
     data[target_table_name, 'to', 'target'].edge_index = torch.tensor([[0], [0]], dtype=torch.long)
-    data['target', 'from', target_table_name].edge_index = torch.tensor([[0], [0]], dtype=torch.long)
+    # data['target', 'from', target_table_name].edge_index = torch.tensor([[0], [0]], dtype=torch.long)
 
     # set the features for each node to the HeteroData object
     for key in metadata.get_tables():
@@ -213,12 +200,25 @@ def tables_to_heterodata(tables, target_table_name, target_column, target_pk, me
         # subtract 1 because the target column has an additional 'target' category
         data['target'].num_classes = len(categories[target_table_name][target_column]) - 1
     elif task == 'regression':
-        data['target'].y = torch.tensor(y.values.reshape(-1, 1).astype('float'), dtype=torch.float32)
+        data['target'].y = torch.tensor(y.reshape(-1, 1).astype('float'), dtype=torch.float32)
 
+
+    # add skip-connections from all tables (except the target_table) to the artificial target node
+    for key in metadata.get_tables():
+        # exclude the target and empty tables (foreign keys only)
+        if key == target_table_name or (data[key].x.size(1) == 1 and data[key].x.sum().item() == 0):
+            continue
+        # connect only towards target
+        pks = torch.arange(data[key].x.size(0))
+        if data['target'].x.size(0) > 1:
+            raise ValueError("Self connections not applicable for target table with multiple rows")
+        target_keys = torch.zeros_like(pks)
+        data[key, 'to', 'target'].edge_index = torch.stack([pks, target_keys], dim=0)
 
     transform = T.Compose([
-        # T.AddSelfLoops(),
-        # T.RemoveIsolatedNodes(),
+        T.AddSelfLoops(),
+        T.RemoveDuplicatedEdges(),
+        T.RemoveIsolatedNodes(),
     ])
 
     return transform(data)

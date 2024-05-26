@@ -1,52 +1,82 @@
+from copy import deepcopy
+import argparse
+import pickle
+
 from tqdm import tqdm
 from torch import optim
 import torch.nn.functional as F
-from torch_geometric.sampler import BaseSampler
-from torch_geometric.loader import HGTLoader, NodeLoader, NeighborLoader, DataLoader
-from torch_geometric.datasets import OGB_MAG
-import torch_geometric.transforms as T
+from torch_geometric.data import HeteroData
+from torch_geometric.loader import DataLoader
+from torch_geometric.transforms import RemoveIsolatedNodes
 import torch
 import numpy as np
+from sklearn.metrics import f1_score, precision_score, recall_score
 
-from datetime import datetime
-
-from tensorboardX import SummaryWriter
 
 from realog.utils.metadata import Metadata
 from realog.hetero_gnns import build_hetero_gnn
-from realog.table_to_heterodata import csv_to_hetero, csv_to_hetero_splits
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-device='cpu'
 torch.set_default_device(device)
 
-def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, patience=50, lr=0.01, weight_decay=0.1, class_weights=None, reduce_fac=0.1):
+def evaluate(model, testloader, loss_fn, task='regression'):
+    model.eval()
+    # evaluate on test set
+    with torch.no_grad():
+        pbar = tqdm(testloader)
+        test_loss = []
+        test_correct = 0
+        test_total = 0
+        pred = []
+        gt   = []
+        for batch in pbar:
+            batch = batch.to(device)
+            out = model(batch.x_dict, batch.edge_index_dict)
+            loss = loss_fn(out['target'], batch['target'].y)
+            test_loss.append(loss.item())
+            if task == 'classification':
+                preds = out['target'].argmax(dim=-1).cpu().numpy()
+                targets = batch['target'].y.cpu().numpy()
+                pred += preds.tolist()
+                gt   += targets.tolist()
+                correct = (targets == preds).sum().item()
+                total = batch['target'].y.shape[0]
+                test_correct += correct
+                test_total += total
+                
+    if task == 'classification':
+        f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        precision  = precision_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        recall  = recall_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+        print('F1 Score: ', f1)
+        print(f'Precision: {precision:.4f} | Recall: {recall:.4f}')
+        return test_loss, test_correct / test_total
+    elif task == 'regression':
+        print('Test Loss: ', np.mean(test_loss))
+        return test_loss, np.sqrt(test_loss).mean()
+
+
+def train(model, data_train, data_val, data_test, task='regression', num_epochs=10000, lr=0.01, weight_decay=0.1, batch_size=64, class_weights=None):
     model.to(device)
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
 
-    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 150], gamma=0.1)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=0.00001)
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=reduce_fac, patience=20, min_lr=0.00001)
-
     model.train()
-    val_loss = None
-    best_loss = np.inf
-    _patience = patience
     # from samplers import get_connected_components
-    trainloader = DataLoader(data_train, batch_size=64, shuffle=False, 
-                            #  generator=torch.Generator(device=device), drop_last=True
-                            )
-    valloader = DataLoader(data_val, batch_size=64, shuffle=False, 
-                        #    generator=torch.Generator(device=device), 
-                           drop_last=False)
-    testloader = DataLoader(data_test, batch_size=64, shuffle=False, 
-                            # generator=torch.Generator(device=device), 
-                            drop_last=False)
+    trainloader = DataLoader(data_train, batch_size=batch_size, shuffle=True, generator=torch.Generator(device=device), drop_last=True)
+    valloader = DataLoader(data_val, batch_size=batch_size, shuffle=False, drop_last=False)
+    testloader = DataLoader(data_test, batch_size=batch_size, shuffle=False, drop_last=False)
+    
+    total_steps = len(trainloader) * num_epochs
+    scheduler = optim.lr_scheduler.OneCycleLR(optimizer, max_lr=lr * 10, total_steps=total_steps, pct_start=0.3, anneal_strategy='cos', three_phase=False)
+
 
     if task == 'classification':
         loss_fn = torch.nn.CrossEntropyLoss(weight=class_weights)
+        best_val_f1 = 0
     elif task == 'regression':
         loss_fn = F.mse_loss
+    
+    best_loss = np.inf
 
     for epoch in range(num_epochs):
         train_loss = []
@@ -54,6 +84,7 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
         pbar = tqdm(trainloader)
         model.train()
         for batch in pbar:
+            batch = batch.to(device)
             optimizer.zero_grad()
             out = model(batch.x_dict, batch.edge_index_dict)
 
@@ -65,15 +96,20 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             loss.backward()
             optimizer.step()
             pbar.set_postfix({'train_loss': np.mean(train_loss), 'train_acc': np.mean(train_acc)})
-            print(f'TRAIN: True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
+            # OneCycleLR is stepped after each batch
+            scheduler.step()
 
+        # validation
         model.eval()
         with torch.no_grad():
             pbar = tqdm(valloader)
             val_loss = []
             val_correct = 0
             val_total = 0
+            pred = []
+            gt   = []
             for batch in pbar:
+                batch = batch.to(device)
                 out = model(batch.x_dict, batch.edge_index_dict)
                 loss = loss_fn(out['target'], batch['target'].y)
                 val_loss.append(loss.item())
@@ -82,79 +118,73 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
                     total = batch['target'].y.size(0)
                     val_correct += correct
                     val_total += total
-                    print(f'VAL  : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
-                pbar.set_postfix({'val_loss': np.mean(val_loss), 'val_acc': val_correct / val_total})
-            
-        if np.mean(val_loss) < best_loss:
-            best_loss = np.mean(val_loss)
-            best_model = model.state_dict()
+                    preds = out['target'].argmax(dim=-1).cpu().numpy().tolist()
+                    targets = batch['target'].y.cpu().numpy().tolist()
+                    pred += preds
+                    gt   += targets
+                    pbar.set_postfix({'val_loss': np.mean(val_loss), 'val_acc': val_correct / val_total})
+                elif task == 'regression':
+                    pbar.set_postfix({'val_loss': np.sqrt(np.mean(val_loss))})
+       
+        if task == 'classification':
+            val_f1 = f1_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+            val_p  = precision_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+            val_r  = recall_score(gt, pred, average='binary', pos_label=1, zero_division=0)
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
+                best_loss = np.mean(val_loss)
+                best_model = deepcopy(model.state_dict())
+            elif val_f1 == best_val_f1 and np.mean(val_loss) < best_loss:
+                best_loss = np.mean(val_loss)
+                best_model = deepcopy(model.state_dict())
+        elif task == 'regression':
+            if np.mean(val_loss) < best_loss:
+                best_loss = np.mean(val_loss)
+                best_model = deepcopy(model.state_dict())
 
         
         if task == 'classification': 
-            print(f'Epoch: {epoch} | Loss: {np.mean(train_loss):.4f} | Val Loss: {np.mean(val_loss):.4f} | Val Acc: {val_correct / val_total:.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
+            print(f'Epoch: {epoch} | Loss: {np.mean(train_loss):.4f} | Val Loss: {np.mean(val_loss):.4f} | Val Acc: {val_correct / val_total:.4f} | F1: {val_f1:.4f} | Precision: {val_p:.4f} | Recall: {val_r:.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
         elif task == 'regression':
-            print(f'Epoch: {epoch} | Loss: {np.mean(train_loss):.4f} | Val Loss: {np.mean(val_loss):.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
+            print(f'Epoch: {epoch} | Loss: {np.sqrt(np.mean(train_loss)):.4f} | Val Loss: {np.sqrt(np.mean(val_loss)):.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
         
-        # if task == 'classification':
-        #     pbar.set_postfix({'train_loss': np.mean(train_loss), 'train_acc': np.mean(train_acc)})
-        # elif task == 'regression':
-        #     pbar.set_description(f'Loss: {np.sqrt(loss.item()):.4f} | Val Loss: {np.sqrt(val_loss.item())if val_loss is not None else -1:.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
-        
-        # if scheduler is multi step
-        if scheduler.__class__.__name__ == 'ReduceLROnPlateau':
-            scheduler.step(loss)
-        else:
-            scheduler.step()
+        test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
+        print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_acc)
 
-
-    # model.load_state_dict(best_model)
-
-        # evaluate on test set
-        with torch.no_grad():
-            pbar = tqdm(testloader)
-            test_loss = []
-            test_correct = 0
-            test_total = 0
-            for batch in pbar:
-                out = model(batch.x_dict, batch.edge_index_dict)
-                loss = loss_fn(out['target'], batch['target'].y)
-                if task == 'classification':
-                    correct = (out['target'].argmax(dim=-1) == batch['target'].y).sum().item()
-                    total = batch['target'].y.size(0)
-                    test_correct += correct
-                    test_total += total
-                test_loss.append(loss.item())
-                print(f'TEST : True distribution: {torch.bincount(batch["target"].y, minlength=2)} | Pred distribution: {torch.bincount(out["target"].argmax(dim=-1))}')
-                # pbar.set_postfix({'test_loss': np.mean(test_loss)})
-            print('Test Loss: ', np.mean(test_loss), 'Test Acc: ', test_correct / test_total)
-
-    print(f'Best Val Loss: {best_loss:.4f} | Test Loss: {np.mean(test_loss):.4f} | Test Acc: {test_correct / test_total:.4f}')
+    # Evaluate the best model
+    model.load_state_dict(best_model)
+    test_loss, test_acc = evaluate(model, testloader, loss_fn, task=task)
+    print(f'Best Val Loss: {best_loss:.4f} | Test Loss: {np.mean(test_loss):.4f} | Test Acc: {test_acc:.4f}')
     return model
 
 
 if __name__ == '__main__':
-    # dataset = 'Biodegradability_v1'
-    # target_table = 'molecule'
-    # target = 'activity'
-    # task = 'regression'
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='financial_v1', choices=['rossmann', 'financial_v1'])
+    parser.add_argument('--model', type=str, default='GAT', choices=['GAT', 'EdgeCNN', 'GraphSAGE', 'GIN', 'GATv2'])
+    parser.add_argument('--batch_size', type=int, default=64)
+    parser.add_argument('--oversample', action='store_true')
+    args = parser.parse_args()
 
-    # dataset = "rossmann"
-    # target_table = "historical"
-    # target = "Customers"
-    # task = 'regression'
+    model = args.model
+    dataset = args.dataset
+    batch_size = args.batch_size
+    if dataset == 'rossmann':
+        task = 'regression'
+    elif dataset == 'financial_v1':
+        task = 'classification'
+        oversample = args.oversample
+
     
-    dataset = 'financial_v1'
-    task = 'classification'
-
-    import pickle
-    metadata = Metadata().load_from_json(f'data/{dataset}/metadata.json')
-    with open(f'data/{dataset}/train_subgraphs.pkl', 'rb') as f:
+    data_dir = 'data'#'/d/hpc/projects/FRI/vh0153/PC7-DB_prediction/data'
+    metadata = Metadata().load_from_json(f'{data_dir}/{dataset}/metadata.json')
+    with open(f'{data_dir}/{dataset}/train_subgraphs.pkl', 'rb') as f:
         train_data = pickle.load(f)
 
-    with open(f'data/{dataset}/val_subgraphs.pkl', 'rb') as f:
+    with open(f'{data_dir}/{dataset}/val_subgraphs.pkl', 'rb') as f:
         val_data = pickle.load(f)
 
-    with open(f'data/{dataset}/test_subgraphs.pkl', 'rb') as f:
+    with open(f'{data_dir}/{dataset}/test_subgraphs.pkl', 'rb') as f:
         test_data = pickle.load(f)
 
 
@@ -166,7 +196,7 @@ if __name__ == '__main__':
         out_channels = 1
         weights = None
 
-
+    
     oversampled_train_data = []
     for i in range(len(train_data)):
         # use a subgraph which includes all tables for model initialization
@@ -175,14 +205,38 @@ if __name__ == '__main__':
         if task == 'classification':
             y = train_data[i]['target'].y.item()
             weights[y] += 1
-            if y == 1:
-                oversampled_train_data.append(train_data[i])
-    # train_data += oversampled_train_data * 4
-    print(weights)
-    weights = 1 / weights
+            if y == 1 and oversample:
+                # augment the minority class sample
+                data_dict = train_data[i].to_dict()
+                for table in train_data[i].x_dict.keys():
+                    if table != 'target' and table != 'loan' and train_data[i].x_dict[table].size(0) > 1:
+                        # randomly sample 0.9 of the rows
+                        indices = torch.randperm(train_data[i].x_dict[table].size(0))[:int(0.9 * train_data[i].x_dict[table].size(0))]
+                        for edge_type in train_data[i].edge_index_dict.keys():
+                            if table == edge_type[0]:
+                                mask = torch.isin(train_data[i].edge_index_dict[edge_type][0], indices.cpu())
+                            elif table == edge_type[1]:
+                                mask = torch.isin(train_data[i].edge_index_dict[edge_type][1], indices.cpu())
+                            else:
+                                continue
+                            data_dict[edge_type]['edge_index'] = train_data[i].edge_index_dict[edge_type][:, mask.cpu()]
+                duplicate = RemoveIsolatedNodes()(HeteroData().from_dict(data_dict))
+                oversampled_train_data.append(duplicate)
+    
+    # TODO: Do we want to oversample the minority class and also weight the loss?
+    
+    if task == 'classification':
+        if oversample:
+            print('Oversampling')
+            train_data += oversampled_train_data
+            weights[1] += len(oversampled_train_data)
+        weights = 1 / weights
     node_types = metadata.get_tables() + ['target']
 
-    print(len(train_data), len(val_data), len(test_data))
+    model_kwargs = {'dropout': 0.1, 'jk':'cat'}
+    if model == 'GATv2':
+        model = 'GAT'
+        model_kwargs['v2'] = True
     
-    model = build_hetero_gnn('GIN', train_data[idx], aggr='sum', types=node_types, hidden_channels=128, num_layers=4, out_channels=out_channels, mlp_layers=0, model_kwargs={'dropout': 0.1, 'jk':"cat"})
-    train(model, train_data, val_data, test_data, task=task, num_epochs=1000, patience=500, lr=0.0001, weight_decay=0.1, class_weights=weights)
+    model = build_hetero_gnn(model, train_data[idx], aggr='mean', types=node_types, hidden_channels=256, num_layers=2, out_channels=out_channels, mlp_layers=5, model_kwargs=model_kwargs)
+    train(model, train_data, val_data, test_data, task=task, num_epochs=1000, lr=0.00001, weight_decay=0.1, class_weights=weights, batch_size=batch_size)
