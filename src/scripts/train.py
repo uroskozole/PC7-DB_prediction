@@ -1,19 +1,16 @@
-from tqdm import tqdm
-from torch import optim
-import torch.nn.functional as F
-from torch_geometric.sampler import BaseSampler
-from torch_geometric.loader import HGTLoader, NodeLoader, NeighborLoader, DataLoader
-from torch_geometric.datasets import OGB_MAG
-import torch_geometric.transforms as T
-import torch
-import numpy as np
-
+import argparse
 from datetime import datetime
 
+import numpy as np
+from tqdm import tqdm
+import torch
+from torch import optim
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
 from tensorboardX import SummaryWriter
 
 from realog.hetero_gnns import build_hetero_gnn
-from realog.table_to_heterodata import csv_to_hetero, csv_to_hetero_splits
+from realog.table_to_heterodata import csv_to_hetero_splits
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.set_default_device(device)
@@ -21,19 +18,14 @@ torch.set_default_device(device)
 def train(model, data_train, data_val = None, data_test = None, task='regression', num_epochs=10000, patience=50, lr=0.01, weight_decay=0.1, reduce_fac=0.1):
     run_name = f'{model.__class__.__name__}_lr{lr}_weight_decay{weight_decay}_reduce_fac{reduce_fac}'
     writer = SummaryWriter(logdir="logs/" + run_name + "run_datetime" + datetime.now().strftime("%Y%m%d-%H%M%S"))
-    # TODO: add dataloader
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    # scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 150], gamma=0.1)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=100, eta_min=0.00001)
-    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=reduce_fac, patience=20, min_lr=0.000001)
     model.train()
     pbar = tqdm(range(num_epochs))
     val_loss = None
     best_loss = np.inf
     _patience = patience
-    # from samplers import get_connected_components
-    # train_connected_components = get_connected_components(data_train, device=device)
-    # dataloader = DataLoader(train_connected_components, batch_size=64, shuffle=True, generator=torch.Generator(device=device))
+    
     batch = data_train
     if task == 'classification':
         loss_fn = F.cross_entropy
@@ -53,7 +45,6 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
             with torch.no_grad():
                 val_out = model(data_val.x_dict, data_val.edge_index_dict)
                 val_loss = loss_fn(val_out['target'], data_val['target'].y)
-                # pbar.set_description(f'Loss: {np.sqrt(loss.item()):.4f} | Val Loss: {np.sqrt(val_loss.item()):.4f} | LR: {optimizer.param_groups[0]["lr"]:.6f}')
             if val_loss < best_loss:
                 best_loss = val_loss
                 _patience = patience
@@ -76,7 +67,7 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
             scheduler.step(loss)
         else:
             scheduler.step()
-        # scheduler.step()
+
         if task == 'classification':
             train_loss = loss.item()
             val_loss = val_loss.item() if val_loss is not None else -1
@@ -108,9 +99,8 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
             boot_loss = np.sqrt(F.mse_loss(torch.tensor(boot_outs), torch.tensor(boot_targets)).item())
             losses.append(boot_loss)
         print(f'Bootstrapped Test Loss: {np.mean(losses):.4f} +/- {np.std(losses)/10:.4f}')
-        # scheduler.step()
 
-    import matplotlib.pyplot as plt
+    # plot the residuals
     preds = test_out['target'].detach().cpu().numpy()
     target = data_test['target'].y.cpu().numpy()
     # plot x=y line
@@ -121,15 +111,24 @@ def train(model, data_train, data_val = None, data_test = None, task='regression
 
 
 if __name__ == '__main__':
-    dataset = 'Biodegradability_v1'
-    target_table = 'molecule'
-    target = 'activity'
-    task = 'regression'
-    # dataset = "rossmann_subsampled"
-    # target_table = "historical"
-    # target = "Customers"
-    # data_train, data_val, data_test = csv_to_hetero_splits('rossmann', 'historical', 'Customers', 'regression', add_skip_connections=False)
-    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task, add_skip_connections=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='Biodegradability_v1', choices=['rossmann', 'financial_v1', 'Biodegradability_v1'])
+    parser.add_argument('--target_table', type=str, default='molecule')
+    parser.add_argument('--target_column', type=str, default='activity')
+    parser.add_argument('--task', type=str, default='regression', choices=['classification', 'regression'])
+    parser.add_argument('--model', type=str, default='GAT', choices=['GAT', 'EdgeCNN', 'GraphSAGE', 'GIN', 'GATv2'])
+    parser.add_argument('--no_skip_connections', default=False, action='store_true')
+    args = parser.parse_args()
+
+    dataset = args.dataset
+    target_table = args.target_table
+    target = args.target_column
+    task = args.task
+    model_name = args.model
+    skip_connections = not args.no_skip_connections
+
+    
+    data_train, data_val, data_test = csv_to_hetero_splits(dataset, target_table, target, task, add_skip_connections=skip_connections)
     
     
     # sanity check that feature dimensions match

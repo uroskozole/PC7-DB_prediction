@@ -2,7 +2,6 @@ from pathlib import Path
 from copy import deepcopy
 
 import numpy as np
-import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from realog.utils.metadata import Metadata
