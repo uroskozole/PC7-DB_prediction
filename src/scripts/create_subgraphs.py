@@ -1,5 +1,6 @@
 import os
 import pickle
+import argparse
 from pathlib import Path
 
 import pandas as pd
@@ -23,23 +24,28 @@ def save_subgraphs(database_name, split, subgraphs, pks, tables, metadata):
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='financial_v1', choices=['rossmann', 'financial_v1'])
+    args = parser.parse_args()
     
-
-    # database_name = 'financial_v1'
-    # target_table = 'loan'
-    # target_column = 'loan_status'
-    # train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1998-01-01'))
-    # val_range   = (pd.to_datetime('1998-01-01'), pd.to_datetime('1998-06-01'))
-    # test_range  = (pd.to_datetime('1998-06-01'), pd.to_datetime('1999-01-01'))
-    # task = 'classification'
-
-    database_name = 'rossmann'
-    target_table = 'historical'
-    target_column = 'historical_Customers'
-    task = 'regression'
-    train_range = (pd.to_datetime('2014-01-01'), pd.to_datetime('2015-01-01'))
-    val_range   = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
-    test_range  = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
+    if args.dataset == 'rossmann':
+        database_name = 'rossmann'
+        target_table = 'historical'
+        target_column = 'historical_Customers'
+        task = 'regression'
+        train_range = (pd.to_datetime('2014-01-01'), pd.to_datetime('2015-01-01'))
+        val_range   = (pd.to_datetime('2015-01-01'), pd.to_datetime('2015-02-01'))
+        test_range  = (pd.to_datetime('2015-02-01'), pd.to_datetime('2015-07-31'))
+    elif args.dataset == 'financial_v1':
+        database_name = 'financial_v1'
+        target_table = 'loan'
+        target_column = 'loan_status'
+        train_range = (pd.to_datetime('1993-01-01'), pd.to_datetime('1998-01-01'))
+        val_range   = (pd.to_datetime('1998-01-01'), pd.to_datetime('1998-06-01'))
+        test_range  = (pd.to_datetime('1998-06-01'), pd.to_datetime('1999-01-01'))
+        task = 'classification'
+    else:
+        raise ValueError(f"Unknown dataset {args.dataset}")
 
 
     metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
@@ -56,7 +62,6 @@ if __name__ == '__main__':
         tables['loan']['loan_status'] = pd.Categorical(tables['loan']['loan_status'], categories=['A', 'B'])
 
     categories = dict()
-    # TODO: for std and means we should probably only use the training data (should split the target table pks before)
     means = dict()
     stds = dict()
     for table in metadata.get_tables():
