@@ -3,160 +3,129 @@ import numpy as np
 from xgboost import XGBClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.utils import class_weight
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.linear_model import LogisticRegression
+import argparse	
+from imblearn.over_sampling import SMOTE
 
 from realog.utils.metadata import Metadata
 from realog.utils.data import load_tables, remove_sdv_columns
+from utils_baselines import process_financial, process_financial_split
 
 
-DATA_DIR = "data"
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", type=str, required=True, help="Model to use for training")
+parser.add_argument("--entire_data", action="store_true", help="Whether to use entire data or not")
+parser.add_argument("--seed", default="42", help="Radnom seed for splitting the data")
+args = parser.parse_args()
+
 database_name = "Financial_v1"
 target_table = "loan"
 target_column = "status"
+DATA_DIR = "data"
+smote = True
+validate = True
 
-metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
-tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
-tables, metadata = remove_sdv_columns(tables, metadata)
+if args.model == "xgb":
+    model = XGBClassifier()
+elif args.model == "logistic":
+    model = LogisticRegression()
+else:
+    raise ValueError("Model not supported") 
 
-df_account = tables["account"]
-df_account.drop(columns=["date"], inplace=True)
+if args.entire_data:
+    metadata = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/metadata.json')
+    tables = load_tables(f'{DATA_DIR}/{database_name}/', metadata)
+    tables, metadata = remove_sdv_columns(tables, metadata)
 
-# merge client to disp
-df_disp = tables["disp"].merge(tables["client"], on="client_id", how="left")
+    X, y = process_financial(tables)
+    # remap classes in y 0 to 1
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=int(args.seed))
 
-# merge card to disp
-df_disp = df_disp.merge(tables["card"], on="disp_id", how="left")
+else:
+    metadata_train = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/split/train/metadata_renamed.json')
+    metadata_test = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/split/test/metadata_renamed.json')
+    metadata_val = Metadata().load_from_json(f'{DATA_DIR}/{database_name}/split/val/metadata_renamed.json')
+    tables_train = load_tables(f'{DATA_DIR}/{database_name}/split/train', metadata_train)
+    tables_test = load_tables(f'{DATA_DIR}/{database_name}/split/test', metadata_train)
+    tables_val = load_tables(f'{DATA_DIR}/{database_name}/split/val', metadata_train)
+    # tables_train, metadata_train = remove_sdv_columns(tables_train, metadata_train)
+    # tables_test, metadata_test = remove_sdv_columns(tables_test, metadata_test)
 
-# calculate age and drop birth_date
-df_disp["age"] = 2022 - df_disp["birth_date"].apply(lambda x: int(str(x).split("-")[0]))
-df_disp.drop(columns=["birth_date"], inplace=True)
+    X_train, y_train = process_financial_split(tables_train)
+    X_test, y_test = process_financial_split(tables_test)
+    X_val, y_val = process_financial_split(tables_val)
+    if smote:
+        smo = SMOTE(k_neighbors=6)
+        X_train, y_train = smo.fit_resample(X_train, y_train)
 
-# calculate account age
-df_disp["age"] = 2022 - df_disp["issued"].apply(lambda x: int(str(x).split("-")[0]))
-df_disp.drop(columns=["issued"], inplace=True)
+    cols_train = X_train.columns
+    cols_test = X_test.columns
+    cols_val = X_val.columns
 
-## agregate new disp and merge on account
-# number of clients in each account
-n_clients = df_disp.groupby("account_id").size()
-df_disp = df_disp.merge(pd.DataFrame(n_clients, columns=["n_clients"]), on="account_id", how="left")
+    for col in  cols_train:
+        if col not in cols_test:
+            X_test[col] = 0
 
-# gender counts in each account
-gender_counts = df_disp.groupby(["account_id", "gender"]).size()
-male_count = pd.DataFrame(gender_counts[(slice(None),"M")], columns=["male_count"])
-female_count = pd.DataFrame(gender_counts[(slice(None),"M")], columns=["female_count"])
-df_disp = df_disp.merge(male_count, on="account_id", how="left")
-df_disp = df_disp.merge(female_count, on="account_id", how="left")
+    for col in  cols_test:
+        if col not in cols_train:
+            X_train[col] = 0
+    
+    for col in X_train.columns:
+        if col not in X_val.columns:
+            X_val[col] = 0
 
-# type_x is client type, type_y is card type
-dummies = pd.get_dummies(df_disp["type_y"], prefix="type_y")
-df_disp = pd.concat([df_disp, dummies], axis=1)
-df_disp.drop(columns=["district_id"], inplace=True)
+    X_test = X_test[X_train.columns]
+    X_val = X_val[X_train.columns]
 
-type_counts = df_disp.groupby("account_id")[dummies.columns].sum()
-type_counts = pd.DataFrame(type_counts, columns=dummies.columns)
-df_disp = df_disp.merge(type_counts, on="account_id", how="left")
+if args.model == "logistic":
+    # fill missing values with mean
+    X_train.fillna(X_train.mean(), inplace=True)
+    X_test.fillna(X_test.mean(), inplace=True)
 
-df_disp = df_disp[df_disp["type_x"] == "OWNER"]
+weight = {0 : np.sum(np.array(y_train)==1)/len(y_train), 1 : np.sum(np.array(y_train)==0)/len(y_train)}
 
-df_account = df_account.merge(df_disp, on="account_id", how="left")
+classes_weights = class_weight.compute_sample_weight(
+    class_weight=weight,
+    y=y_train
+)
+model.fit(X_train, y_train, 
+        #   sample_weight=classes_weights,
+          )
 
-## merge this account to loan
-df_loan = tables["loan"]
-# rename date column
-df_loan.rename(columns={"date": "date_loan"}, inplace=True)
-df_loan.rename(columns={"amount": "amount_loan"}, inplace=True)
+if validate:
+    y_pred = model.predict(X_val)
 
-df_loan = df_loan.merge(df_account, on="account_id", how="left")
+    mse_val = accuracy_score(y_val, y_pred)
+    mse_train = accuracy_score(y_train, model.predict(X_train))
 
-## agregate trans and merge to loan
-df_trans = tables["trans"]
+    # recall = recall_score(y_test, y_pred)
+    # precision = precision_score(y_test, y_pred)
+    f1 = f1_score(y_val, y_pred, average="binary")
 
-ohe_cols = ["type", "operation", "k_symbol"]
-dummies_cols = []
-for col in ohe_cols:
-    dummies = pd.get_dummies(df_trans[col], prefix=col)
-    df_trans = pd.concat([df_trans, dummies], axis=1)
-    df_trans.drop(columns=[col], inplace=True)
-    dummies_cols.extend(dummies.columns)
+    # print(f"Recall: {recall}")
+    # print(f"Precision: {precision}")
+    print(f"F1: {f1}")
 
-df_loan_trans = df_loan.merge(df_trans, on="account_id", how="left")
-df_loan_trans["time_flag"] = df_loan_trans["date_loan"] > df_loan_trans["date"]
-df_loan_trans = df_loan_trans[df_loan_trans["time_flag"]]
-
-current_balance = df_loan_trans.groupby("account_id").apply(lambda x: x.sort_values(by='date').iloc[0])["balance"]
-
-# df_loan_agg = df_loan.groupby("account_id").sum()
-counts = df_loan_trans.groupby("account_id")[dummies_cols].sum()
-counts = pd.DataFrame(counts, columns=dummies_cols)
-
-#balance_std = df_loan_trans.groupby("account_id")["balance"].std()
-
-amount = df_loan_trans.groupby("account_id")["amount"].sum()
-# amount = pd.DataFrame(amount, columns=dummies_cols)
-
-df_loan = df_loan.merge(counts, on="account_id", how="left")
-
-# df_loan.drop(columns=["balance"], inplace=True)
-# df_loan = df_loan.merge(balance_std, on="account_id", how="left")
-df_loan = df_loan.merge(current_balance, on="account_id", how="left")
-
-# df_loan.drop(columns=["amount"], inplace=True)
-df_loan = df_loan.merge(amount, on="account_id", how="left")
-
-## aggregate order and merge to loan
-df_order = tables["order"]
-df_order_agg = df_order.groupby("account_id")["amount"].sum()
-
-df_loan = df_loan.merge(df_order_agg, on="account_id", how="left")
-
-## process the dataset
-drop_cols = ["loan_id", 
-             "account_id", 
-             "date_loan",
-             "disp_id",
-             "client_id",
-             "type_x",
-             "card_id",
-                "type_y",
+    print(f"Train accuracy: {np.sqrt(mse_train)}")
+    print(f"Test accuracy: {np.sqrt(mse_val)}")
 
 
-             ]
+else:
+    y_pred = model.predict(X_test)
 
-ohe_cols = ["gender", "frequency", "district_id"]
-num_cols = ["amount_x", "amount_y", "balance", "n_clients", "age", "payments", "duration", "amount_loan"]
+    mse_test = accuracy_score(y_test, y_pred)
+    mse_train = accuracy_score(y_train, model.predict(X_train))
 
-df_loan.drop(columns=drop_cols, inplace=True)
+    # recall = recall_score(y_test, y_pred)
+    # precision = precision_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred, average="binary")
 
-# one-hot encode ohe_cols
-for col in ohe_cols:
-    dummies = pd.get_dummies(df_loan[col], prefix=col)
-    df_loan = pd.concat([df_loan, dummies], axis=1)
-    df_loan.drop(columns=col, inplace=True)
+    # print(f"Recall: {recall}")
+    # print(f"Precision: {precision}")
+    print(f"F1: {f1}")
 
-# standardize num_cols
-scaler = StandardScaler()
-df_loan[num_cols] = scaler.fit_transform(df_loan[num_cols])
+    print(f"Train accuracy: {np.sqrt(mse_train)}")
+    print(f"Test accuracy: {np.sqrt(mse_test)}")
 
-X, y = df_loan.drop(columns=[target_column]), df_loan[target_column]
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-# map the target column from [A, B, C, D] to [0, 1, 2, 3]
-y_train = y_train.map({"A": 0, "B": 1, "C": 2, "D": 3})
-y_test = y_test.map({"A": 0, "B": 1, "C": 2, "D": 3})
-
-
-model = XGBClassifier()
-
-model.fit(X_train, y_train)
-y_pred = model.predict(X_test)
-
-mse_test = accuracy_score(y_test, y_pred)
-mse_train = accuracy_score(y_train, model.predict(X_train))
-
-print(f"Train RMSE: {np.sqrt(mse_train)}")
-print(f"Test RMSE: {np.sqrt(mse_test)}")
-
-pass
-# do preprocessing on loan
-
-# make predictions
