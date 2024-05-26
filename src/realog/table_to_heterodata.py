@@ -1,8 +1,8 @@
 from pathlib import Path
 
+import torch
 from torch_geometric.data import HeteroData
 import torch_geometric.transforms as T
-import torch
 import pandas as pd
 
 from realog.utils.metadata import Metadata
