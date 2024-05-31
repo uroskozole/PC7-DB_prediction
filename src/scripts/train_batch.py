@@ -91,10 +91,13 @@ def train(model, data_train, data_val, data_test, task='regression', num_epochs=
             if task == 'classification':
                 acc = (out['target'].argmax(dim=-1) == batch['target'].y).sum().item() / batch['target'].y.size(0)
                 train_acc.append(acc)
+                pbar.set_postfix({'train_loss': np.mean(train_loss), 'train_acc': np.mean(train_acc)})
+            elif task == 'regression':
+                pbar.set_postfix({'train_loss': np.sqrt(np.mean(train_loss))})
             train_loss.append(loss.item())
             loss.backward()
             optimizer.step()
-            pbar.set_postfix({'train_loss': np.mean(train_loss), 'train_acc': np.mean(train_acc)})
+            
             # OneCycleLR is stepped after each batch
             scheduler.step()
 
